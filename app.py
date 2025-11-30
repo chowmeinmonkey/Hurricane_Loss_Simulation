@@ -1,5 +1,5 @@
 """
-Florida Hurricane Risk Lab — Final Professional Version
+Florida Hurricane Risk Lab
 """
 
 import streamlit as st
@@ -41,7 +41,6 @@ st.markdown("""
     .metric-value {font-size: 1.8rem; font-weight: 700; color: #fbbf24;}
     .stButton>button {background: linear-gradient(90deg,#ec4899,#f59e0b); color: white; border: none; border-radius: 12px; height: 50px; font-weight: 600;}
     .explanation {background: rgba(236,72,153,0.08); padding: 1.2rem; border-radius: 12px; border-left: 4px solid #ec4899; margin: 1.5rem 0;}
-    /* Ensure the Streamlit container padding is not excessive */
     .stApp {padding-top: 10px;}
 </style>
 """, unsafe_allow_html=True)
@@ -89,7 +88,7 @@ st.markdown("""
 <div style="text-align:center;padding:4rem 2rem;background:linear-gradient(135deg,rgba(236,72,153,0.15),rgba(245,158,11,0.15));border-radius:20px;margin-bottom:3rem;">
     <h1>Florida Hurricane Risk Lab</h1>
     <p style="font-size:1.5rem;color:#cbd5e1;max-width:900px;margin:1.5rem auto;">
-        Interactive Monte-Carlo simulation of hurricane risk and insured losses in Florida.
+        Interactive Monte-Carlo simulation of hurricane risk and financial impact in Florida.
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -142,7 +141,7 @@ with c4: st.markdown(f'<div class="metric-card"><div class="metric-label">Climat
 st.markdown("---")
 
 # ——————————————————————— Loss Exceedance Curve ———————————————————————
-st.markdown("## 📉 Loss Exceedance Curve")
+st.markdown("##  Loss Exceedance Curve")
 st.markdown("""
 <div class="explanation">
 <strong>What the red line means:</strong><br>
@@ -296,7 +295,7 @@ if st.session_state.storm_launched and st.session_state.storm_data:
         transition_time=500
     ).add_to(m)
     
-    # Add the line track for better visualization of the path
+    # Add the line track for better visualisation of the path
     folium.PolyLine(
         path_coordinates,
         color=EYE_COLOR, # Keep the path line red
@@ -350,4 +349,4 @@ with st.expander("Technical Methodology"):
     - Vulnerability: Damage $=$ min$(1, \\text{wind}/150 \\times \\text{building factor})$
     """)
 
-st.markdown("<p style='text-align:center;color:#64748b;margin-top:4rem;'>Built with Streamlit • Open source • 2025</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#64748b;margin-top:4rem;'>Michael A.Campion • Nov 2025</p>", unsafe_allow_html=True)
