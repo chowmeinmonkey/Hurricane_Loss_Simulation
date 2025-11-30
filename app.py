@@ -1,5 +1,5 @@
 """
-Florida Hurricane Risk Lab 
+Florida Hurricane Risk Lab
 """
 
 import streamlit as st
@@ -8,7 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import folium
 from streamlit_folium import folium_static
-from folium.plugins import TimestampedGeoJson, HeatMap, Circle
+from folium.plugins import TimestampedGeoJson, HeatMap
+from folium import Circle  # ← This was the fix!
 from scipy.stats import poisson
 
 # ——————————————————————— Styling ———————————————————————
@@ -84,7 +85,7 @@ df = get_portfolio()
 # ——————————————————————— Core Functions ———————————————————————
 def vulnerability(wind_mph, construction="average"):
     base = max(0.0, min(1.0, wind_mph / 150))
-    mult = {"wood": 1.50, "brick": 1.15, "concrete":0.75}
+    mult = {"wood": 1.50, "brick": 1.15, "concrete": 0.75}
     return min(1.0, base * mult.get(construction.lower(), 1.0))
 
 def simulate_storm():
@@ -158,7 +159,7 @@ with c3:
 with c4:
     st.markdown(f'<div class="metric-card"><div class="metric-label">Climate Multiplier</div><div class="metric-value">×{climate_factor:.2f}</div></div>', unsafe_allow_html=True)
 
-# ——————————————————————— Tabs with Explanations ———————————————————————
+# ——————————————————————— Tabs ———————————————————————
 tab1, tab2, tab3 = st.tabs(["Loss Curve", "Animated Storm", "Damage Heatmap"])
 
 with tab1:
@@ -168,8 +169,8 @@ with tab1:
     <strong>What you’re seeing:</strong><br>
     • X-axis = Annual insured loss in dollars<br>
     • Y-axis = Probability of exceeding that loss in any given year<br>
-    • 1% on Y-axis = a 1-in-100-year event<br>
-    • Dashed yellow line = Expected Annual Loss
+    • 1% = a 1-in-100-year event<br>
+    • Yellow dashed line = Expected Annual Loss
     </div>
     """, unsafe_allow_html=True)
 
@@ -210,8 +211,8 @@ with tab2:
     <strong>How the animation works:</strong><br>
     • Random hurricane forms in the Gulf or Atlantic<br>
     • Moves northwest at realistic speed (~15 mph)<br>
-    • Wind speed decays gradually after landfall<br>
-    • Red dot shows the eye position hour-by-hour
+    • Wind speed decays after landfall<br>
+    • Red dot = eye position hour-by-hour
     </div>
     """, unsafe_allow_html=True)
 
@@ -241,10 +242,10 @@ with tab3:
     st.markdown("""
     <div class="explanation">
     <strong>How damage is calculated:</strong><br>
-    • Storm footprint = circular radius ≈ wind speed × 0.5 km<br>
-    • Any property inside takes damage based on wind speed & building type<br>
-    • Wood buildings take 50% more damage than concrete<br>
-    • Heat intensity = damage ratio × insured value
+    • Storm radius ≈ wind speed × 0.5 km<br>
+    • Buildings inside radius take damage based on wind & construction type<br>
+    • Wood = 50% more vulnerable than concrete<br>
+    • Heat intensity = damage × insured value
     </div>
     """, unsafe_allow_html=True)
 
@@ -256,34 +257,20 @@ with tab3:
         HeatMap([[lat, lon, dmg*120] for lat, lon, dmg in impacts], radius=25, blur=20).add_to(m)
         folium_static(m, width=900, height=550)
 
-# ——————————————————————— Technical Details ———————————————————————
+# ——————————————————————— Math Section ———————————————————————
 with st.expander("How the Math Works — Technical Details", expanded=False):
     st.markdown("""
     ### Monte-Carlo Catastrophe Modeling (industry standard)
 
-    1. **Frequency**  
-       Hurricanes/year ~ Poisson(λ) where λ = user value × climate multiplier
+    1. **Frequency** — Poisson(λ × climate factor)  
+    2. **Intensity** — Normal(μ × climate^0.4, σ)  
+    3. **Location** — Uniform in historical zone  
+    4. **Vulnerability** — Damage = min(1, wind/150 × building factor)  
+    5. **Footprint** — Circular radius = wind × 0.5 km  
+    6. **Aggregation** — Sum all storm losses per year  
+    7. **Exceedance** — Rank-order annual losses
 
-    2. **Intensity**  
-       Max wind speed ~ Normal(μ, σ) clipped ≥74 mph  
-       μ grows with climate^0.4 (scientific consensus)
-
-    3. **Location**  
-       Uniform random center in historical genesis zone
-
-    4. **Vulnerability**  
-       Damage % = min(1, (wind / 150) × building factor)
-
-    5. **Footprint**  
-       Simple circular radius = wind × 0.5 km
-
-    6. **Aggregation**  
-       Annual loss = sum of all storm losses in that year
-
-    7. **Exceedance Curve**  
-       Sort annual losses → plot vs. rank probability
-
-    This is the same core methodology used by RMS, AIR Worldwide, and reinsurance pricing teams — just simplified for speed and teaching.
+    Same core method used by RMS, AIR, and reinsurers — just fast and beautiful.
     """)
 
 # ——————————————————————— Footer ———————————————————————
