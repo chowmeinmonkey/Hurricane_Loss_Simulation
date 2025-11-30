@@ -224,43 +224,8 @@ with tab2:
         
         m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
         
-        # FIX: Define the custom JavaScript function using folium.Element
-        # This injects the JS function directly into the map's script context.
-        # We must use folium.Element to ensure the JS is available when TimestampedGeoJson runs.
-        js_func = """
-        function customPointToLayer(feature, latlng) {
-            var radius_pixels = feature.properties.radius_pixels || 10;
-            var circle_color = '#ef4444';
-
-            // Draw the large translucent circle (wind field)
-            var circle = L.circleMarker(latlng, {
-                radius: radius_pixels, 
-                fillColor: circle_color,
-                color: circle_color,
-                weight: 2,
-                opacity: 0.8,
-                fillOpacity: 0.15
-            });
-
-            // Draw a smaller, solid circle (the eye)
-            var eye = L.circleMarker(latlng, {
-                radius: 5, 
-                fillColor: circle_color,
-                color: circle_color,
-                weight: 1,
-                opacity: 1,
-                fillOpacity: 1
-            });
-
-            // Combine both into a layer group
-            var group = L.layerGroup([circle, eye]);
-            
-            if (feature.properties.popup) {
-                group.bindPopup(feature.properties.popup);
-            }
-            return group;
-        }
-        """
+        # FIX: Single-line JavaScript definition to prevent Python SyntaxError on deployment.
+        js_func = "function customPointToLayer(feature, latlng) {var radius_pixels = feature.properties.radius_pixels || 10; var circle_color = '#ef4444'; var circle = L.circleMarker(latlng, {radius: radius_pixels, fillColor: circle_color, color: circle_color, weight: 2, opacity: 0.8, fillOpacity: 0.15}); var eye = L.circleMarker(latlng, {radius: 5, fillColor: circle_color, color: circle_color, weight: 1, opacity: 1, fillOpacity: 1}); var group = L.layerGroup([circle, eye]); if (feature.properties.popup) {group.bindPopup(feature.properties.popup);} return group;}"
         
         # Add the JavaScript function definition to the map's HTML head
         m.get_root().header.add_child(folium.Element(f"<script>{js_func}</script>"))
@@ -273,7 +238,7 @@ with tab2:
             add_last_point=True,
             duration='PT16H', 
             transition_time=500,
-            # Reference the JS function by its name as a string (NO json.dumps needed)
+            # Reference the JS function by its name as a string
             pointToLayer='customPointToLayer' 
         ).add_to(m)
         folium_static(m, width=900, height=550)
