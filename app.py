@@ -51,7 +51,6 @@ def simulate_hurricane_center():
 
 st.set_page_config(page_title="Florida Hurricane Risk", layout="wide")
 st.title("Florida Hurricane Risk Simulator")
-st.markdown("**No files needed · Everything works instantly**")
 
 st.sidebar.header("Hurricane Settings")
 lambda_param = st.sidebar.slider("Average hurricanes/year", 0.1, 5.0, 0.56, 0.05)
