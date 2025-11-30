@@ -37,13 +37,14 @@ st.markdown("""
 # ——————————————————————— Portfolio ———————————————————————
 @st.cache_data
 def get_portfolio():
-    return pd.DataFrame({
-        "city": ["Miami","Tampa","Tallahassee","Orlando","Ft Lauderdale","Jacksonville","Key West","Pensacola"],
-        "insured_value": [500000,750000,1000000,600000,800000,1200000,450000,900000],
-        "construction_type": ["wood","brick","concrete","wood","brick","concrete","wood","concrete"],
-        "lat": [25.7617,27.9478,30.4383,28.5383,26.1224,30.3322,24.5551,30.4213],
-        "lon": [-80.1918,-82.4584,-84.2807,-81.3792,-80.1373,-81.6557,-81.7799,-87.2169]
-    })
+    # Ensure the indentation here is only regular spaces, not U+00A0
+    return pd.DataFrame({ 
+        "city": ["Miami","Tampa","Tallahassee","Orlando","Ft Lauderdale","Jacksonville","Key West","Pensacola"],
+        "insured_value": [500000,750000,1000000,600000,800000,1200000,450000,900000],
+        "construction_type": ["wood","brick","concrete","wood","brick","concrete","wood","concrete"],
+        "lat": [25.7617,27.9478,30.4383,28.5383,26.1224,30.3322,24.5551,30.4213],
+        "lon": [-80.1918,-82.4584,-84.2807,-81.3792,-80.1373,-81.6557,-81.7799,-87.2169]
+    })
 
 df = get_portfolio()
 
