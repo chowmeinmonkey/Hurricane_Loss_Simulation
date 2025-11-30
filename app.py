@@ -125,7 +125,7 @@ with st.sidebar:
     
     hurricanes_per_year = st.slider("Average hurricanes per year", 0.1, 10.0, 0.56, 0.05)
     wind_mean = st.slider("Mean maximum wind speed (mph)", 80, 180, 110, 5)
-    wind_std = st.slider("Wind speed variation", 10, 50, 25, 5)
+    wind_std = st.slider("Wind speed standard deviation (mph)", 10, 50, 25, 5)
     
     st.markdown("---")
     st.subheader("Climate Scenario")
