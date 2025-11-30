@@ -11,13 +11,18 @@ from streamlit_folium import folium_static
 from folium.plugins import TimestampedGeoJson, HeatMap
 from folium import CircleMarker
 from scipy.stats import poisson
-import json # Added for safe JavaScript string handling
+import json 
 
-# Initialize session state for tab control and storm data
+# Initialize session state for storm data
 if 'storm_launched' not in st.session_state:
     st.session_state.storm_launched = False
 if 'storm_data' not in st.session_state:
     st.session_state.storm_data = None
+if 'simulation_run' not in st.session_state:
+    st.session_state.simulation_run = False
+if 'yearly_losses' not in st.session_state:
+    st.session_state.yearly_losses = []
+
 
 # ——————————————————————— Styling ———————————————————————
 st.set_page_config(page_title="Florida Hurricane Risk Lab", layout="wide")
@@ -32,6 +37,8 @@ st.markdown("""
     .metric-value {font-size: 1.8rem; font-weight: 700; color: #fbbf24;}
     .stButton>button {background: linear-gradient(90deg,#ec4899,#f59e0b); color: white; border: none; border-radius: 12px; height: 50px; font-weight: 600;}
     .explanation {background: rgba(236,72,153,0.08); padding: 1.2rem; border-radius: 12px; border-left: 4px solid #ec4899; margin: 1.5rem 0;}
+    /* Ensure the Streamlit container padding is not excessive */
+    .stApp {padding-top: 10px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -55,7 +62,6 @@ def vulnerability(wind_mph, construction):
     return min(1.0, base * mult.get(construction.lower(), 1.0))
 
 def simulate_storm():
-    # FIX: Corrected unmatched parenthesis and ensured clean spaces
     center = (np.random.uniform(24.3, 31.0), np.random.uniform(-87.8, -79.8))
     wind = max(74, np.random.normal(110, 25))
     return wind, center
@@ -65,7 +71,6 @@ def calculate_loss(df, wind, center):
     total = 0
     impacts = []
     for _, row in df.iterrows():
-        # Approximate distance calculation
         dist = ((row.lat-center[0])**2 + (row.lon-center[1])**2)**0.5 * 111
         if dist <= radius_km:
             dmg = vulnerability(wind, row.construction_type)
@@ -88,7 +93,6 @@ st.markdown("""
 # ——————————————————————— Sidebar ———————————————————————
 with st.sidebar:
     st.header("Parameters")
-    # Added keys to track parameter changes
     hurricanes_per_year = st.slider("Hurricanes per year", 0.1, 10.0, 0.56, 0.05, key="hpy")
     wind_mean = st.slider("Mean max wind (mph)", 80, 180, 110, 5, key="wm")
     wind_std = st.slider("Wind std dev (mph)", 10, 50, 25, 5, key="ws")
@@ -103,11 +107,13 @@ with st.sidebar:
 # Reset storm animation state if parameters change
 if any(st.session_state[k] != st.session_state.get(f'prev_{k}', st.session_state[k]) for k in ["hpy", "wm", "ws", "sy", "cl"]):
     st.session_state.storm_launched = False
+    st.session_state.simulation_run = False
+
 for k in ["hpy", "wm", "ws", "sy", "cl"]:
     st.session_state[f'prev_{k}'] = st.session_state[k]
 
-# ——————————————————————— Dashboard ———————————————————————
-st.markdown("### Risk Summary")
+# ——————————————————————— Risk Summary ———————————————————————
+st.markdown("## 📊 Risk Summary")
 @st.cache_data(ttl=30)
 def quick_sim(hpy, wm, ws, cf): 
     losses = []
@@ -128,193 +134,210 @@ with c2: st.markdown(f'<div class="metric-card"><div class="metric-label">99% Va
 with c3: st.markdown(f'<div class="metric-card"><div class="metric-label">P(Loss > $10M)</div><div class="metric-value">{(losses>10e6).mean():.1%}</div></div>', unsafe_allow_html=True)
 with c4: st.markdown(f'<div class="metric-card"><div class="metric-label">Climate Multiplier</div><div class="metric-value">×{climate_factor:.2f}</div></div>', unsafe_allow_html=True)
 
-# ——————————————————————— Tabs ———————————————————————
-tab1, tab2, tab3 = st.tabs(["Loss Exceedance Curve", "Storm Animation", "Single Storm"])
+---
 
-with tab1:
-    st.markdown("#### Loss Exceedance Curve")
-    st.markdown("""
-    <div class="explanation">
-    <strong>What the red line means:</strong><br>
-    Each point on the <span style="color:#ef4444;font-weight:700;">red line</span> tells you:<br>
-    “There is an X% chance (or 1-in-1/X years) that annual insured losses will exceed $Y”.<br><br>
-    Example: If the curve passes through (10 000 000, 0.01) &rarr; there is a <strong>1-in-100-year chance</strong> of losses > $10 million.<br>
-    The yellow dashed line is the Expected Annual Loss (average over all simulated years).
-    </div>
-    """, unsafe_allow_html=True)
+# ——————————————————————— Loss Exceedance Curve ———————————————————————
+st.markdown("## 📉 Loss Exceedance Curve")
+st.markdown("""
+<div class="explanation">
+<strong>What the red line means:</strong><br>
+Each point on the <span style="color:#ef4444;font-weight:700;">red line</span> tells you:<br>
+“There is an X% chance (or 1-in-1/X years) that annual insured losses will exceed $Y”.<br><br>
+Example: If the curve passes through (10 000 000, 0.01) &rarr; there is a <strong>1-in-100-year chance</strong> of losses > $10 million.<br>
+The yellow dashed line is the Expected Annual Loss (average over all simulated years).
+</div>
+""", unsafe_allow_html=True)
 
-    if st.button("Run Full Simulation", type="primary"):
-        progress = st.progress(0)
-        status = st.empty()
+def run_full_simulation():
+    # This function is now defined outside the if block to ensure Streamlit can manage state cleanly
+    progress = st.progress(0)
+    status = st.empty()
 
-        total_storms = int(sim_years * hurricanes_per_year * climate_factor * 1.5)
-        winds = np.maximum(74, np.random.normal(wind_mean * climate_factor**0.4, wind_std, total_storms))
-        lats = np.random.uniform(24.3, 31.0, total_storms)
-        lons = np.random.uniform(-87.8, -79.8, total_storms)
+    total_storms = int(sim_years * hurricanes_per_year * climate_factor * 1.5)
+    winds = np.maximum(74, np.random.normal(wind_mean * climate_factor**0.4, wind_std, total_storms))
+    lats = np.random.uniform(24.3, 31.0, total_storms)
+    lons = np.random.uniform(-87.8, -79.8, total_storms)
 
-        yearly = []
-        idx = 0
-        for y in range(sim_years):
-            n = poisson.rvs(hurricanes_per_year * climate_factor)
-            loss = 0
-            for _ in range(n):
-                if idx >= total_storms: break
-                loss += calculate_loss(df, winds[idx], (lats[idx], lons[idx]))[0]
-                idx += 1
-            yearly.append(loss)
-            progress.progress((y+1)/sim_years)
-            status.text(f"Year {y+1:,} of {sim_years:,}")
+    yearly = []
+    idx = 0
+    for y in range(sim_years):
+        n = poisson.rvs(hurricanes_per_year * climate_factor)
+        loss = 0
+        for _ in range(n):
+            if idx >= total_storms: break
+            loss += calculate_loss(df, winds[idx], (lats[idx], lons[idx]))[0]
+            idx += 1
+        yearly.append(loss)
+        progress.progress((y+1)/sim_years)
+        status.text(f"Year {y+1:,} of {sim_years:,}")
 
-        progress.empty()
-        status.empty()
+    st.session_state.simulation_run = True
+    st.session_state.yearly_losses = yearly
+    
+    progress.empty()
+    status.empty()
 
-        fig, ax = plt.subplots(figsize=(12,7))
-        sorted_l = sorted(yearly, reverse=True)
-        ax.loglog(sorted_l, np.linspace(1,0,len(sorted_l)), color="#ef4444", lw=3.5, label="Exceedance probability")
-        ax.axvline(np.mean(yearly), color="#fbbf24", ls="--", lw=2, label=f'Expected Annual Loss: ${np.mean(yearly):,.0f}')
-        ax.grid(True, which="both", ls="--", alpha=0.5)
-        ax.set_title(f"Loss Exceedance Curve — {sim_years:,} Years", color="white", fontsize=18)
-        ax.set_xlabel("Annual Insured Loss ($)", color="#e2e8f0")
-        ax.set_ylabel("Exceedance Probability", color="#e2e8f0")
-        ax.legend()
-        st.pyplot(fig)
+if st.button("Run Full Simulation", type="primary"):
+    run_full_simulation()
 
-with tab2:
-    st.markdown("#### Hurricane Landfall Animation")
-    st.markdown("""
-    <div class="explanation">
-    &bullet; <strong>Red dot</strong> = hurricane eye (Now clearly visible)<br>
-    &bullet; <strong>Translucent blue circle</strong> = full radius of hurricane-force winds<br>
-    &bullet; Damage occurs anywhere inside this circle &mdash; that’s why even storms that “miss” Florida can still cause losses.
-    </div>
-    """, unsafe_allow_html=True)
+if st.session_state.simulation_run:
+    yearly = st.session_state.yearly_losses
+    fig, ax = plt.subplots(figsize=(12,7))
+    sorted_l = sorted(yearly, reverse=True)
+    ax.loglog(sorted_l, np.linspace(1,0,len(sorted_l)), color="#ef4444", lw=3.5, label="Exceedance probability")
+    ax.axvline(np.mean(yearly), color="#fbbf24", ls="--", lw=2, label=f'Expected Annual Loss: ${np.mean(yearly):,.0f}')
+    ax.grid(True, which="both", ls="--", alpha=0.5)
+    ax.set_title(f"Loss Exceedance Curve — {sim_years:,} Years", color="white", fontsize=18)
+    ax.set_xlabel("Annual Insured Loss ($)", color="#e2e8f0")
+    ax.set_ylabel("Exceedance Probability", color="#e2e8f0")
+    ax.legend()
+    st.pyplot(fig)
 
-    if st.button("Launch Storm", key="launch_storm_button_2"):
-        st.session_state.storm_data = simulate_storm()
-        st.session_state.storm_launched = True
+---
 
-    if st.session_state.storm_launched and st.session_state.storm_data:
-        wind, center = st.session_state.storm_data
+# ——————————————————————— Storm Animation ———————————————————————
+st.markdown("## 🌪️ Storm Animation")
+st.markdown("""
+<div class="explanation">
+&bullet; <strong>Red dot</strong> = hurricane eye<br>
+&bullet; <strong>Translucent blue circle</strong> = full radius of hurricane-force winds (∼ wind speed &times; 0.5 km)<br>
+&bullet; Damage occurs anywhere inside this circle &mdash; that’s why even storms that “miss” Florida can still cause losses.
+</div>
+""", unsafe_allow_html=True)
+
+if st.button("Launch Storm", key="launch_storm_button"):
+    st.session_state.storm_data = simulate_storm()
+    st.session_state.storm_launched = True
+
+if st.session_state.storm_launched and st.session_state.storm_data:
+    wind, center = st.session_state.storm_data
+    
+    animated_features = []
+    path_coordinates = []
+    
+    base_time = pd.to_datetime('2025-09-01T00:00:00')
+    
+    # Initialize map once
+    m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
+    
+    # Define colors
+    EYE_COLOR = "#ef4444"
+    RADIUS_COLOR = "#3b82f6" # Bright Blue
+
+    temp_lat, temp_lon = center
+    temp_wind = wind
+    for h in range(16):
+        # Calculate properties for this time step
+        temp_lat += np.random.normal(0.04, 0.015)
+        temp_lon -= 0.13
+        temp_wind_now = max(60, temp_wind - h*5)
         
-        animated_features = []
-        path_coordinates = []
+        current_time = base_time + pd.Timedelta(hours=h)
+        time_str = current_time.isoformat()
         
-        base_time = pd.to_datetime('2025-09-01T00:00:00')
-        current_lat, current_lon = center
-        
-        # Initialize map once
-        m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
-        
-        # Define colors
-        EYE_COLOR = "#ef4444"
-        RADIUS_COLOR = "#3b82f6" # Bright Blue for high contrast
+        path_coordinates.append([temp_lon, temp_lat])
 
-        temp_lat, temp_lon = center
-        temp_wind = wind
-        for h in range(16):
-            # Calculate properties for this time step
-            temp_lat += np.random.normal(0.04, 0.015)
-            temp_lon -= 0.13
-            temp_wind_now = max(60, temp_wind - h*5)
-            
-            current_time = base_time + pd.Timedelta(hours=h)
-            time_str = current_time.isoformat()
-            
-            path_coordinates.append([temp_lon, temp_lat])
-
-            # A. Feature for the Wind Field Radius (Large Translucent Blue Circle)
-            radius_visual_scale = temp_wind_now * 0.5 * 1.5 
-            animated_features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [temp_lon, temp_lat]},
-                "properties": {
-                    "time": time_str,
-                    "popup": f"Radius – {temp_wind_now:.0f} mph",
-                    "icon": "circle",
-                    "iconstyle": {
-                        "color": RADIUS_COLOR, 
-                        "fillColor": RADIUS_COLOR, 
-                        "weight": 2, 
-                        "opacity": 0.8, 
-                        "fillOpacity": 0.15,
-                        "radius": radius_visual_scale # Dynamic radius
-                    }
+        # A. Feature for the Wind Field Radius (Large Translucent Blue Circle)
+        radius_visual_scale = temp_wind_now * 0.5 * 1.5 
+        animated_features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [temp_lon, temp_lat]},
+            "properties": {
+                "time": time_str,
+                "popup": f"Radius – {temp_wind_now:.0f} mph",
+                "icon": "circle",
+                "iconstyle": {
+                    "color": RADIUS_COLOR, 
+                    "fillColor": RADIUS_COLOR, 
+                    "weight": 2, 
+                    "opacity": 0.8, 
+                    "fillOpacity": 0.15,
+                    "radius": radius_visual_scale # Dynamic radius
                 }
-            })
+            }
+        })
 
-            # B. Feature for the Eye Marker (Small Solid Red Dot)
-            animated_features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [temp_lon, temp_lat]},
-                "properties": {
-                    "time": time_str,
-                    "popup": f"Eye – {temp_wind_now:.0f} mph",
-                    "icon": "circle",
-                    "iconstyle": {
-                        "color": EYE_COLOR, 
-                        "fillColor": EYE_COLOR, 
-                        "weight": 4, 
-                        "opacity": 1.0, 
-                        "fillOpacity": 1.0,
-                        "radius": 10 # Fixed radius for the eye
-                    }
+        # B. Feature for the Eye Marker (Small Solid Red Dot)
+        animated_features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [temp_lon, temp_lat]},
+            "properties": {
+                "time": time_str,
+                "popup": f"Eye – {temp_wind_now:.0f} mph",
+                "icon": "circle",
+                "iconstyle": {
+                    "color": EYE_COLOR, 
+                    "fillColor": EYE_COLOR, 
+                    "weight": 4, 
+                    "opacity": 1.0, 
+                    "fillOpacity": 1.0,
+                    "radius": 10 # Fixed radius for the eye
                 }
-            })
+            }
+        })
 
-        # Create the final GeoJSON feature collection for all ANIMATED elements
-        geo_json_data = {
-            "type": "FeatureCollection",
-            "features": animated_features
-        }
-        
-        # Add the animated eye and radius markers using TimestampedGeoJson
-        TimestampedGeoJson(
-            geo_json_data,
-            period="PT1H", 
-            auto_play=True, 
-            loop=False, 
-            add_last_point=True,
-            duration='PT16H', 
-            transition_time=500
-        ).add_to(m)
-        
-        # Add the line track for better visualization of the path
-        folium.PolyLine(
-            path_coordinates,
-            color=EYE_COLOR, # Keep the path line red
-            weight=3,
-            opacity=0.7
-        ).add_to(m)
-        
-        folium_static(m, width=900, height=550)
+    # Create the final GeoJSON feature collection for all ANIMATED elements
+    geo_json_data = {
+        "type": "FeatureCollection",
+        "features": animated_features
+    }
+    
+    # Add the animated eye and radius markers using TimestampedGeoJson
+    TimestampedGeoJson(
+        geo_json_data,
+        period="PT1H", 
+        auto_play=True, 
+        loop=False, 
+        add_last_point=True,
+        duration='PT16H', 
+        transition_time=500
+    ).add_to(m)
+    
+    # Add the line track for better visualization of the path
+    folium.PolyLine(
+        path_coordinates,
+        color=EYE_COLOR, # Keep the path line red
+        weight=3,
+        opacity=0.7
+    ).add_to(m)
+    
+    folium_static(m, width=900, height=550)
 
-with tab3:
-    st.markdown("#### Single Storm Damage Map")
-    st.markdown("""
-    <div class="explanation">
-    &bullet; Red circle = full hurricane-force wind field<br>
-    &bullet; Heat = damage &times; insured value at each city
-    </div>
-    """, unsafe_allow_html=True)
+---
 
-    if st.button("Generate Storm", key="generate_single_storm"):
-        wind, center = simulate_storm()
-        _, impacts = calculate_loss(df, wind, center)
+# ——————————————————————— Single Storm Map ———————————————————————
+st.markdown("## 🗺️ Single Storm Damage Map")
+st.markdown("""
+<div class="explanation">
+&bullet; Red circle = full hurricane-force wind field<br>
+&bullet; Heat = damage &times; insured value at each city
+</div>
+""", unsafe_allow_html=True)
 
-        m = folium.Map(location=[27.8, -83], zoom_start=7, tiles="CartoDB positron")
-        # Full radius
-        CircleMarker(
-            location=center,
-            radius=wind*900,
-            color="#ef4444",
-            weight=3,
-            fillOpacity=0.18,
-            popup=f"{wind:.0f} mph hurricane"
-        ).add_to(m)
-        # Eye
-        CircleMarker(location=center, radius=15, color="#ef4444", fillColor="#ef4444").add_to(m)
-        HeatMap([[lat,lon,dmg*150] for lat,lon,dmg in impacts], radius=25, blur=20).add_to(m)
-        folium_static(m, width=900, height=550)
+if st.button("Generate Storm", key="generate_single_storm"):
+    # Generate and store storm data for persistence
+    st.session_state.single_storm_data = simulate_storm()
+    st.session_state.single_storm_generated = True
+
+if st.session_state.get('single_storm_generated', False):
+    wind, center = st.session_state.single_storm_data
+    _, impacts = calculate_loss(df, wind, center)
+
+    m = folium.Map(location=[27.8, -83], zoom_start=7, tiles="CartoDB positron")
+    # Full radius (uses Folium's CircleMarker where radius is in meters)
+    CircleMarker(
+        location=center,
+        radius=wind*900,
+        color="#ef4444",
+        weight=3,
+        fillOpacity=0.18,
+        popup=f"{wind:.0f} mph hurricane"
+    ).add_to(m)
+    # Eye
+    CircleMarker(location=center, radius=15, color="#ef4444", fillColor="#ef4444").add_to(m)
+    # Heatmap of losses
+    HeatMap([[lat,lon,dmg*150] for lat,lon,dmg in impacts], radius=25, blur=20).add_to(m)
+    folium_static(m, width=900, height=550)
 
 # ——————————————————————— Footer ———————————————————————
 with st.expander("Technical Methodology"):
