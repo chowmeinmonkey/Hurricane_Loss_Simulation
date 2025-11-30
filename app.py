@@ -1,5 +1,5 @@
 """
-Florida Hurricane Risk Lab
+Florida Hurricane Risk Lab 
 """
 
 import streamlit as st
@@ -54,7 +54,6 @@ def vulnerability(wind_mph, construction):
     return min(1.0, base * mult.get(construction.lower(), 1.0))
 
 def simulate_storm():
-    # FIX: Corrected unmatched parenthesis and ensured clean spaces
     center = (np.random.uniform(24.3, 31.0), np.random.uniform(-87.8, -79.8))
     wind = max(74, np.random.normal(110, 25))
     return wind, center
@@ -64,7 +63,6 @@ def calculate_loss(df, wind, center):
     total = 0
     impacts = []
     for _, row in df.iterrows():
-        # Approximate distance calculation
         dist = ((row.lat-center[0])**2 + (row.lon-center[1])**2)**0.5 * 111
         if dist <= radius_km:
             dmg = vulnerability(wind, row.construction_type)
@@ -87,7 +85,6 @@ st.markdown("""
 # ——————————————————————— Sidebar ———————————————————————
 with st.sidebar:
     st.header("Parameters")
-    # Added keys to track parameter changes
     hurricanes_per_year = st.slider("Hurricanes per year", 0.1, 10.0, 0.56, 0.05, key="hpy")
     wind_mean = st.slider("Mean max wind (mph)", 80, 180, 110, 5, key="wm")
     wind_std = st.slider("Wind std dev (mph)", 10, 50, 25, 5, key="ws")
@@ -188,7 +185,6 @@ with tab2:
     </div>
     """, unsafe_allow_html=True)
 
-    # FIX 1: Use session_state to store storm data and control the rendering
     if st.button("Launch Storm", key="launch_storm_button_2"):
         st.session_state.storm_data = simulate_storm()
         st.session_state.storm_launched = True
@@ -196,49 +192,76 @@ with tab2:
     if st.session_state.storm_launched and st.session_state.storm_data:
         wind, center = st.session_state.storm_data
         features = []
-        lat, lon = center
         
         base_time = pd.to_datetime('2025-09-01T00:00:00')
+        current_lat, current_lon = center
 
         for h in range(16):
-            lat += np.random.normal(0.04, 0.015)
-            lon -= 0.13
+            current_lat += np.random.normal(0.04, 0.015)
+            current_lon -= 0.13
             wind_now = max(60, wind - h*5)
             
             current_time = base_time + pd.Timedelta(hours=h)
             time_str = current_time.isoformat()
 
-            # FIX 2: Correct GeoJSON structure for the moving radius circle
+            # The radius of hurricane-force winds in km, scaled for visual representation on map
+            # A radius of 1 km is roughly 0.009 degrees lat/lon at Florida's latitude.
+            # We'll use a simple scaling factor for visual impact.
+            # Convert km radius to a representative pixel radius for 'L.circleMarker' in JS
+            # Assuming ~20000 pixels for full map width, 0.5km wind * (some factor)
+            # This 'radius_prop' will be passed to JS to control the circle size.
+            radius_prop = wind_now * 0.5 * 1.5 # 0.5km per mph, times a visual scaling factor
+
+            # Create a GeoJSON Point feature for each step
             features.append({
                 "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "geometry": {"type": "Point", "coordinates": [current_lon, current_lat]},
                 "properties": {
                     "time": time_str,
-                    "popup": f"Radius – {wind_now:.0f} mph",
-                    # Radius style, scaled for map visibility
-                    "style": {
-                        "radius": wind_now * 0.5 * 0.5,
-                        "fillColor": "#ef4444",
-                        "color": "#ef4444",
-                        "weight": 2,
-                        "opacity": 0.8,
-                        "fillOpacity": 0.15
-                    }
+                    "popup": f"Wind: {wind_now:.0f} mph, Radius: {wind_now * 0.5:.1f} km",
+                    "marker-color": "#ef4444", # Color for the eye
+                    "radius_pixels": radius_prop # Custom property for dynamic radius in JS
                 }
             })
 
-            # The eye marker
-            features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [lon, lat]},
-                "properties": {
-                    "time": time_str,
-                    "popup": f"Eye – {wind_now:.0f} mph",
-                    "icon": "circle",
-                    "iconstyle": {"color": "#ef4444", "fillColor": "#ef4444", "weight": 4, "radius": 10}
-                }
-            })
+        # Custom JavaScript function to draw the circle based on 'radius_pixels' property
+        point_to_layer_js = """
+        function(feature, latlng) {
+            var radius_pixels = feature.properties.radius_pixels || 10; // Default radius if not set
+            var marker_color = feature.properties['marker-color'] || '#ef4444';
+            var circle_color = '#ef4444'; // Fixed color for the translucent circle
 
+            // Draw the translucent red circle for the hurricane's radius
+            var circle = L.circleMarker(latlng, {
+                radius: radius_pixels, // Use the dynamic radius
+                fillColor: circle_color,
+                color: circle_color,
+                weight: 2,
+                opacity: 0.8,
+                fillOpacity: 0.15
+            });
+
+            // Draw a smaller, solid red circle for the eye
+            var eye = L.circleMarker(latlng, {
+                radius: 5, // Smaller fixed radius for the eye
+                fillColor: marker_color,
+                color: marker_color,
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 1
+            });
+
+            // Create a layer group to combine both the circle and the eye
+            var group = L.layerGroup([circle, eye]);
+            
+            // Add popup if available
+            if (feature.properties.popup) {
+                group.bindPopup(feature.properties.popup);
+            }
+            return group;
+        }
+        """
+        
         m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
         TimestampedGeoJson(
             {"type": "FeatureCollection", "features": features},
@@ -246,8 +269,10 @@ with tab2:
             auto_play=True, 
             loop=False, 
             add_last_point=True,
-            duration='PT16H', # Set duration for smoother slider playback
-            transition_time=500
+            duration='PT16H', 
+            transition_time=500,
+            # Pass the custom pointToLayer function to render dynamic circles
+            pointToLayer=point_to_layer_js 
         ).add_to(m)
         folium_static(m, width=900, height=550)
 
@@ -268,7 +293,7 @@ with tab3:
         # Full radius
         CircleMarker(
             location=center,
-            radius=wind*900,
+            radius=wind*900, # This radius is in meters for folium.CircleMarker
             color="#ef4444",
             weight=3,
             fillOpacity=0.18,
