@@ -1,5 +1,6 @@
 """
 Florida Hurricane Risk Lab
+Monte-Carlo simulation 
 """
 
 import streamlit as st
@@ -12,25 +13,17 @@ from folium.plugins import TimestampedGeoJson, HeatMap
 import plotly.graph_objects as go
 from scipy.stats import poisson, norm
 
-# ——————————————————————————————————————————————
-# Page Config & Professional Styling
-# ——————————————————————————————————————————————
-
+# ——————————————————————— Styling ———————————————————————
 st.set_page_config(page_title="Hurricane Risk Lab", layout="wide")
 
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    body, .css-18e3th9, .css-1d391kg {font-family: 'Inter', sans-serif;}
+    body, .css-18e3th9 {font-family: 'Inter', sans-serif;}
     .main {background: #0f172a; color: #e2e8f0;}
-    
-    h1 {color: #f472b6; font-weight: 700; margin-bottom: 0.5rem;}
-    h2, h3 {color: #fbbf24; font-weight: 600;}
-    
-    .stApp {background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);}
-    
-    /* Metric cards */
+    h1 {color: #f472b6; font-weight: 700;}
+    h2, h3 {color: #fbbf24;}
+
     .metric-card {
         background: rgba(251, 191, 36, 0.12);
         border: 1px solid rgba(251, 191, 36, 0.25);
@@ -40,10 +33,9 @@ st.markdown("""
         box-shadow: 0 8px 25px rgba(0,0,0,0.3);
         height: 140px;
     }
-    .metric-label {font-size: 0.95rem; color: #94a3b8; margin-bottom: 0.5rem;}
+    .metric-label {font-size: 0.95rem; color: #94a3b8;}
     .metric-value {font-size: 1.8rem; font-weight: 700; color: #fbbf24;}
-    
-    /* Buttons */
+
     .stButton>button {
         background: linear-gradient(90deg, #ec4899, #f59e0b);
         color: white;
@@ -52,7 +44,6 @@ st.markdown("""
         padding: 0.7rem 1.5rem;
         font-weight: 600;
         box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
-        transition: all 0.3s;
         width: 100%;
         height: 50px;
     }
@@ -60,8 +51,7 @@ st.markdown("""
         transform: translateY(-3px);
         box-shadow: 0 10px 25px rgba(236, 72, 153, 0.6);
     }
-    
-    /* Tabs */
+
     .stTabs [data-baseweb="tab"] {
         background: rgba(255,255,255,0.05);
         border-radius: 12px 12px 0 0;
@@ -73,21 +63,15 @@ st.markdown("""
         background: linear-gradient(90deg, #ec4899, #f59e0b);
         color: white;
     }
-    
-    /* Fix spacing */
+
     .block-container {padding-top: 2rem; max-width: 1400px;}
-    .css-1y0t9h3 {padding: 1rem;}
 </style>
 """, unsafe_allow_html=True)
 
-# ——————————————————————————————————————————————
-# Demo Portfolio Data
-# ——————————————————————————————————————————————
-
+# ——————————————————————— Data (8 major Florida cities) ———————————————————————
 @st.cache_data
-def get_demo_portfolio():
+def get_portfolio():
     return pd.DataFrame({
-        "property_id": range(1, 9),
         "city": ["Miami", "Tampa", "Tallahassee", "Orlando", "Ft Lauderdale", "Jacksonville", "Key West", "Pensacola"],
         "insured_value": [500000, 750000, 1000000, 600000, 800000, 1200000, 450000, 900000],
         "construction_type": ["wood", "brick", "concrete", "wood", "brick", "concrete", "wood", "concrete"],
@@ -95,116 +79,77 @@ def get_demo_portfolio():
         "lon": [-80.1918, -82.4584, -84.2807, -81.3792, -80.1373, -81.6557, -81.7799, -87.2169]
     })
 
-exposure_df = get_demo_portfolio()
+df = get_portfolio()
 
-# ——————————————————————————————————————————————
-# Core Modeling Functions
-# ——————————————————————————————————————————————
+# ——————————————————————— Modeling Functions ———————————————————————
+def vulnerability(wind_mph, construction="average"):
+    base = max(0.0, min(1.0, wind_mph / 150))
+    mult = {"wood": 1.50, "brick": 1.15, "concrete": 0.75}
+    return min(1.0, base * mult.get(construction.lower(), 1.0))
 
-def vulnerability_curve(wind_speed_mph: float, construction: str = "average") -> float:
-    """Return damage ratio (0–1) based on wind speed and building type."""
-    base_damage = max(0.0, min(1.0, wind_speed_mph / 150))
-    multipliers = {"wood": 1.50, "brick": 1.15, "concrete": 0.75}
-    return min(1.0, base_damage * multipliers.get(construction.lower(), 1.0))
+def simulate_storm():
+    center = (np.random.uniform(24.3, 31.0), np.random.uniform(-87.8, -79.8))
+    wind = max(74, np.random.normal(110, 25))
+    return wind, center
 
-def simulate_storm_center():
-    return (np.random.uniform(24.3, 31.0), np.random.uniform(-87.8, -79.8))
-
-def simulate_wind_speed(mean_mph: float = 110):
-    return max(74, np.random.normal(mean_mph, 25))
-
-def calculate_portfolio_loss(df, wind_speed, center):
-    radius_km = wind_speed * 0.5
-    total_loss = 0
+def calculate_loss(df, wind, center):
+    radius_km = wind * 0.5
+    total = 0
     impacts = []
-    
     for _, row in df.iterrows():
-        distance_km = ((row.lat - center[0])**2 + (row.lon - center[1])**2)**0.5 * 111
-        if distance_km <= radius_km:
-            damage_ratio = vulnerability_curve(wind_speed, row.construction_type)
-            loss = row.insured_value * damage_ratio
-            total_loss += loss
-            impacts.append((row.lat, row.lon, damage_ratio))
+        dist = ((row.lat - center[0])**2 + (row.lon - center[1])**2)**0.5 * 111
+        if dist <= radius_km:
+            dmg = vulnerability(wind, row.construction_type)
+            loss = row.insured_value * dmg
+            total += loss
+            impacts.append((row.lat, row.lon, dmg))
         else:
             impacts.append((row.lat, row.lon, 0))
-    return total_loss, impacts
+    return total, impacts
 
-# ——————————————————————————————————————————————
-# Header
-# ——————————————————————————————————————————————
-
+# ——————————————————————— Header & Description ———————————————————————
 st.markdown("""
 <div style="text-align:center; padding:4rem 2rem; background:linear-gradient(135deg,rgba(236,72,153,0.15),rgba(245,158,11,0.15)); border-radius:20px; border:1px solid rgba(236,72,153,0.3); margin-bottom:3rem;">
-    <h1 style="font-size:4.2rem; margin:0;">Hurricane Risk Lab</h1>
-    <p style="font-size:1.4rem; color:#cbd5e1; margin-top:1rem;">
-        Interactive catastrophe modeling 
+    <h1 style="font-size:4.5rem; margin:0;">Hurricane Risk Lab</h1>
+    <p style="font-size:1.5rem; color:#cbd5e1; max-width:900px; margin:1.5rem auto; line-height:1.6;">
+        A real-time, interactive catastrophe modeling tool that simulates thousands of years of Florida hurricanes.
+        <br><br>
+        Explore how storm frequency, intensity, and climate change affect insured losses across major cities — using Monte-Carlo simulation, animated landfall tracks, 3D wind fields, and exceedance curves.
     </p>
 </div>
 """, unsafe_allow_html=True)
 
-# ——————————————————————————————————————————————
-# Sidebar ———————— SIDEBAR: Full Controls ————————
-# ——————————————————————————————————————————————
-
+# ——————————————————————— Sidebar Controls ———————————————————————
 with st.sidebar:
     st.header("Simulation Parameters")
     
-    col_a, col_b = st.columns(2)
-    with col_a:
-        hurricanes_per_year = st.number_input("Hurricanes/year (λ)", 0.1, 10.0, 0.56, 0.05)
-        wind_mean = st.slider("Mean wind speed (mph)", 80, 180, 110, 5)
-    with col_b:
-        wind_variation = st.slider("Wind speed std dev", 10, 50, 25, 5)
-        damage_threshold = st.slider("Damage threshold (mph)", 100, 200, 150, 5)
+    hurricanes_per_year = st.slider("Average hurricanes per year", 0.1, 10.0, 0.56, 0.05)
+    wind_mean = st.slider("Mean maximum wind speed (mph)", 80, 180, 110, 5)
+    wind_std = st.slider("Wind speed variation", 10, 50, 25, 5)
     
     st.markdown("---")
     st.subheader("Climate Scenario")
-    climate = st.select_slider("Future climate impact", 
-                               options=["Today", "2030", "2050", "2100"], 
-                               value="Today")
+    climate = st.select_slider("Projected year", options=["Today", "2030", "2050", "2100"], value="Today")
     climate_factor = {"Today": 1.0, "2030": 1.12, "2050": 1.25, "2100": 1.45}[climate]
-    
     st.markdown(f"**Intensity multiplier: ×{climate_factor:.2f}**")
-    
-    st.markdown("---")
-    st.subheader("Portfolio")
-    uploaded = st.file_uploader("Upload your own CSV", type=["csv"],
-                                help="Must have: insured_value, lat, lon. Optional: construction_type, city")
-    if uploaded:
-        try:
-            user_df = pd.read_csv(uploaded)
-            required = ['insured_value', 'lat', 'lon']
-            if all(c in user_df.columns for c in required):
-                exposure_df = user_df
-                st.success(f"Loaded {len(exposure_df):,} properties")
-                st.balloons()
-            else:
-                st.error(f"Missing columns: {set(required) - set(user_df.columns)}")
-        except:
-            st.error("Could not read CSV")
 
-# ——————————————————————————————————————————————
-# Live Risk Dashboard
-# ——————————————————————————————————————————————
-
+# ——————————————————————— Live Risk Dashboard ———————————————————————
 st.markdown("### Live Risk Dashboard")
 
-# Fast simulation for live metrics
-@st.cache_data(ttl=60)
-def run_quick_simulation():
+@st.cache_data(ttl=30)
+def quick_simulation():
     losses = []
     for _ in range(500):
-        n_events = poisson.rvs(hurricanes_per_year * climate_factor)
-        annual_loss = 0
-        for _ in range(n_events):
-            wind = simulate_wind_speed(wind_mean * climate_factor**0.4)
-            center = simulate_storm_center()
-            loss, _ = calculate_portfolio_loss(exposure_df, wind, center)
-            annual_loss += loss
-        losses.append(annual_loss)
+        n = poisson.rvs(hurricanes_per_year * climate_factor)
+        year_loss = 0
+        for _ in range(n):
+            wind = max(74, np.random.normal(wind_mean * climate_factor**0.4, wind_std))
+            center = simulate_storm()[1]
+            year_loss += calculate_loss(df, wind, center)[0]
+        losses.append(year_loss)
     return losses
 
-losses = run_quick_simulation()
+losses = quick_simulation()
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -236,90 +181,69 @@ with col4:
     </div>
     ''', unsafe_allow_html=True)
 
-# ——————————————————————————————————————————————
-# Main Tabs
-# ——————————————————————————————————————————————
-
+# ——————————————————————— Tabs ———————————————————————
 tab1, tab2, tab3, tab4 = st.tabs(["Loss Exceedance Curve", "Animated Storm Track", "3D Wind Field", "Damage Heatmap"])
 
 with tab1:
-    st.markdown("##### Full Monte Carlo Simulation (50,000 years)")
-    if st.button("Run 50,000-Year Simulation", type="primary"):
-        with st.spinner("Simulating half a century of hurricanes..."):
-            full_losses = []
+    st.markdown("##### 50,000-Year Monte Carlo Simulation")
+    if st.button("Run Full Simulation", type="primary"):
+        with st.spinner("Simulating 50,000 years of hurricanes..."):
+            full = []
             for _ in range(50000):
-                events = poisson.rvs(hurricanes_per_year * climate_factor)
-                year_loss = sum(
-                    calculate_portfolio_loss(exposure_df,
-                                            simulate_wind_speed(wind_mean * climate_factor**0.4),
-                                            simulate_storm_center())[0]
-                    for _ in range(events)
-                )
-                full_losses.append(year_loss or 0)
-            
-            fig, ax = plt.subplots(figsize=(12, 7))
-            ax.loglog(sorted(full_losses, reverse=True), 
-                     np.linspace(1, 0, len(full_losses)), 
-                     color="#f472b6", linewidth=3)
-            ax.grid(True, which="both", ls="--", alpha=0.5, color="#475569")
+                n = poisson.rvs(hurricanes_per_year * climate_factor)
+                y = sum(calculate_loss(df, max(74, np.random.normal(wind_mean * climate_factor**0.4, wind_std)), simulate_storm()[1])[0] for _ in range(n))
+                full.append(y or 0)
+            fig, ax = plt.subplots(figsize=(12,7))
+            ax.loglog(sorted(full, reverse=True), np.linspace(1,0,len(full)), color="#f472b6", lw=3)
+            ax.grid(True, which="both", ls="--", alpha=0.5)
             ax.set_title("Loss Exceedance Curve", fontsize=18, color="white")
-            ax.set_xlabel("Annual Loss ($)", color="#e2e8f0")
-            ax.set_ylabel("Exceedance Probability", color="#e2e8f0")
             st.pyplot(fig)
 
 with tab2:
     st.markdown("##### Watch a Hurricane Make Landfall")
-    if st.button("Generate Animated Storm"):
-        wind, (lat0, lon0) = simulate_storm_center(), simulate_wind_speed(wind_mean)
+    if st.button("Generate Storm Animation"):
+        wind, center = simulate_storm()
         track = []
-        lat, lon = lat0, lon0
+        lat, lon = center
         for h in range(16):
             lat += np.random.normal(0.04, 0.015)
             lon -= 0.13
             wind_now = max(60, wind - h*5)
             track.append((lat, lon, wind_now))
         
-        features = [
-            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [ln, lt]},
-             "properties": {"time": f"2025-09-01T{h:02d}:00:00", "popup": f"{w:.0f} mph", "icon": "circle"}}
-            for h, (lt, ln, w) in enumerate(track)
-        ]
+        features = [{"type":"Feature","geometry":{"type":"Point","coordinates":[ln,lt]},
+                     "properties":{"time":f"2025-09-01T{h:02d}:00:00","popup":f"{w:.0f} mph"}}
+                    for h, (lt, ln, w) in enumerate(track)]
         
         m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
-        TimestampedGeoJson({"type": "FeatureCollection", "features": features},
+        TimestampedGeoJson({"type":"FeatureCollection","features":features},
                            period="PT1H", add_last_point=True, auto_play=True, loop=False).add_to(m)
         folium_static(m, width=900, height=550)
 
 with tab3:
     st.markdown("##### 3D Wind Speed Surface")
     if st.button("Render 3D Wind Field"):
-        wind, center = simulate_wind_speed(wind_mean), simulate_storm_center()
+        wind, center = simulate_storm()
         x = np.linspace(center[1]-3, center[1]+3, 70)
         y = np.linspace(center[0]-3, center[0]+3, 70)
         X, Y = np.meshgrid(x, y)
         Z = wind * np.exp(-((X-center[1])**2 + (Y-center[0])**2) / 2.5)
-        
         fig = go.Figure(data=[go.Surface(z=Z, x=X, y=Y, colorscale="OrRd", showscale=False)])
-        fig.update_layout(scene=dict(xaxis_title="Longitude", yaxis_title="Latitude", zaxis_title="Wind Speed"),
-                          margin=dict(l=0,r=0,b=0,t=40), height=650,
-                          paper_bgcolor="rgba(0,0,0,0)")
+        fig.update_layout(scene=dict(xaxis_title="Lon", yaxis_title="Lat", zaxis_title="Wind (mph)"),
+                          margin=dict(l=0,r=0,b=0,t=40), height=650, paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
 
 with tab4:
     st.markdown("##### Real-Time Damage Heatmap")
-    if st.button("Generate Current Storm Impact"):
-        wind, center = simulate_wind_speed(wind_mean), simulate_storm_center()
-        _, impacts = calculate_portfolio_loss(exposure_df, wind, center)
-        
+    if st.button("Show Current Storm Impact"):
+        wind, center = simulate_storm()
+        _, impacts = calculate_loss(df, wind, center)
         m = folium.Map(location=[27.8, -83], zoom_start=7, tiles="CartoDB positron")
         folium.Circle(location=center, radius=wind*1000, color="#ec4899", weight=3, fill_opacity=0.25).add_to(m)
         HeatMap([[lat, lon, dmg*120] for lat, lon, dmg in impacts], radius=25, blur=20).add_to(m)
         folium_static(m, width=900, height=550)
 
-# ——————————————————————————————————————————————
-# Footer
-# ——————————————————————————————————————————————
-
+# ——————————————————————— Footer ———————————————————————
 st.markdown("""
 <div style="text-align:center; margin-top:6rem; padding:2rem; background:rgba(236,72,153,0.08); border-radius:16px; border:1px solid rgba(236,72,153,0.2);">
 </div>
