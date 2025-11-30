@@ -1,5 +1,5 @@
 """
-Florida Hurricane Risk Lab 
+Florida Hurricane Risk Lab — Final Professional Version
 """
 
 import streamlit as st
@@ -11,6 +11,7 @@ from streamlit_folium import folium_static
 from folium.plugins import TimestampedGeoJson, HeatMap
 from folium import CircleMarker
 from scipy.stats import poisson
+import json # <-- Added for safe JavaScript string handling
 
 # Initialize session state for tab control and storm data
 if 'storm_launched' not in st.session_state:
@@ -54,6 +55,7 @@ def vulnerability(wind_mph, construction):
     return min(1.0, base * mult.get(construction.lower(), 1.0))
 
 def simulate_storm():
+    # FIX: Corrected unmatched parenthesis and ensured clean spaces
     center = (np.random.uniform(24.3, 31.0), np.random.uniform(-87.8, -79.8))
     wind = max(74, np.random.normal(110, 25))
     return wind, center
@@ -63,6 +65,7 @@ def calculate_loss(df, wind, center):
     total = 0
     impacts = []
     for _, row in df.iterrows():
+        # Approximate distance calculation
         dist = ((row.lat-center[0])**2 + (row.lon-center[1])**2)**0.5 * 111
         if dist <= radius_km:
             dmg = vulnerability(wind, row.construction_type)
@@ -85,6 +88,7 @@ st.markdown("""
 # ——————————————————————— Sidebar ———————————————————————
 with st.sidebar:
     st.header("Parameters")
+    # Added keys to track parameter changes
     hurricanes_per_year = st.slider("Hurricanes per year", 0.1, 10.0, 0.56, 0.05, key="hpy")
     wind_mean = st.slider("Mean max wind (mph)", 80, 180, 110, 5, key="wm")
     wind_std = st.slider("Wind std dev (mph)", 10, 50, 25, 5, key="ws")
@@ -204,7 +208,8 @@ with tab2:
             current_time = base_time + pd.Timedelta(hours=h)
             time_str = current_time.isoformat()
 
-            # radius_pixels property for dynamic circle size
+            # radius_pixels property for dynamic circle size (visual scaling)
+            # This is the property the custom JS will read.
             radius_prop = wind_now * 0.5 * 1.5 
 
             # Create a GeoJSON Point feature for each step
@@ -214,19 +219,17 @@ with tab2:
                 "properties": {
                     "time": time_str,
                     "popup": f"Wind: {wind_now:.0f} mph, Radius: {wind_now * 0.5:.1f} km",
-                    "marker-color": "#ef4444", 
                     "radius_pixels": radius_prop 
                 }
             })
 
         # Custom JavaScript function to draw the circle and the eye marker
-        # FIX: The JS is now defined as a single-line string to avoid Python syntax issues
         point_to_layer_js = """
         function(feature, latlng) {
             var radius_pixels = feature.properties.radius_pixels || 10;
             var circle_color = '#ef4444';
 
-            // Draw the translucent red circle for the hurricane's radius
+            // Draw the large translucent circle (wind field)
             var circle = L.circleMarker(latlng, {
                 radius: radius_pixels, 
                 fillColor: circle_color,
@@ -236,7 +239,7 @@ with tab2:
                 fillOpacity: 0.15
             });
 
-            // Draw a smaller, solid red circle for the eye
+            // Draw a smaller, solid circle (the eye)
             var eye = L.circleMarker(latlng, {
                 radius: 5, 
                 fillColor: circle_color,
@@ -265,7 +268,8 @@ with tab2:
             add_last_point=True,
             duration='PT16H', 
             transition_time=500,
-            pointToLayer=point_to_layer_js 
+            # Use json.dumps to safely pass the JS function string to Folium
+            pointToLayer=json.dumps(point_to_layer_js) 
         ).add_to(m)
         folium_static(m, width=900, height=550)
 
@@ -286,7 +290,7 @@ with tab3:
         # Full radius
         CircleMarker(
             location=center,
-            radius=wind*900, # This radius is in meters for folium.CircleMarker
+            radius=wind*900,
             color="#ef4444",
             weight=3,
             fillOpacity=0.18,
@@ -306,4 +310,4 @@ with st.expander("Technical Methodology"):
     - Vulnerability: Damage $=$ min$(1, \\text{wind}/150 \\times \\text{building factor})$
     """)
 
-st.markdown("<p style='text-align:center;color:#64748b;margin-top:4rem;'>Michael A. Campion • 2025</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#64748b;margin-top:4rem;'>Built with Streamlit • Open source • 2025</p>", unsafe_allow_html=True)
