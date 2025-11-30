@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import folium
-from streamlit_folium
+from streamlit_folium import folium_static        # ← fixed
 from folium.plugins import TimestampedGeoJson, HeatMap
 from folium import CircleMarker
 from scipy.stats import poisson
@@ -45,7 +45,7 @@ def get_portfolio():
         "city": ["Miami", "Tampa", "Tallahassee", "Orlando", "Ft Lauderdale", "Jacksonville", "Key West", "Pensacola"],
         "insured_value": [500000, 750000, 1000000, 600000, 800000, 1200000, 450000, 900000],
         "construction_type": ["wood", "brick", "concrete", "wood", "brick", "concrete", "wood", "concrete"],
-        "lat": [25.7617, 27.9478, 30.4383, 28.5383, 26.1224, 30.3322, 24.5551, 30.4213],
+        "lat": [25.7617, 27.9478, 30.4383, 28.5383, 26.1224, 30: 30.3322, 24.5551, 30.4213],
         "lon": [-80.1918, -82.4584, -84.2807, -81.3792, -80.1373, -81.6557, -81.7799, -87.2169]
     })
 
@@ -167,7 +167,6 @@ with tab1:
                 storm_idx += 1
             yearly_losses.append(loss)
 
-            # Update progress
             progress_bar.progress((year + 1) / sim_years)
             status_text.text(f"Simulated {year + 1:,} / {sim_years:,} years")
 
@@ -209,7 +208,7 @@ with tab2:
                     "time": f"2025-09-01T{h:02d}:00:00",
                     "popup": f"Wind: {current_wind:.0f} mph",
                     "icon": "circle",
-                    "iconstyle": {"color": "#ec4899", "weight": 3, "radius": 10}
+                    "iconstyle": {"color": "#ec4899", "fillColor": "#ec4899", "weight": 3, "radius": 12}
                 }
             })
 
@@ -219,8 +218,7 @@ with tab2:
             period="PT1H",
             add_last_point=True,
             auto_play=True,
-            loop=False,
-            time_slider_drag_update=True
+            loop=False
         ).add_to(m)
         folium_static(m, width=900, height=550)
 
@@ -241,7 +239,7 @@ with tab3:
         m = folium.Map(location=[27.8, -83], zoom_start=7, tiles="CartoDB positron")
         CircleMarker(
             location=center,
-            radius=wind*800,  # visual scaling
+            radius=wind*800,
             color="#ec4899",
             weight=3,
             fillOpacity=0.2,
