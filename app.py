@@ -197,7 +197,7 @@ with tab2:
         wind, center = st.session_state.storm_data
         
         # 1. Prepare Features for GeoJSON
-        point_features = []
+        animated_features = []
         path_coordinates = []
         
         base_time = pd.to_datetime('2025-09-01T00:00:00')
@@ -206,7 +206,6 @@ with tab2:
         # Initialize map once
         m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
 
-        # FIX: Loop through time steps to create points and static radius circles
         temp_lat, temp_lon = center
         temp_wind = wind
         for h in range(16):
@@ -221,42 +220,53 @@ with tab2:
             # Add coordinates to the path track
             path_coordinates.append([temp_lon, temp_lat])
 
-            # A. Draw the wind field circle (Static element for the track, not animated by slider)
-            folium.CircleMarker(
-                location=[temp_lat, temp_lon],
-                # radius is in meters for folium.CircleMarker, scaled for visual effect
-                radius=temp_wind_now * 0.5 * 1.5, 
-                color="#ef4444",
-                weight=1,
-                fillOpacity=0.08,
-            ).add_to(m)
+            # A. Feature for the Wind Field Radius (Large Translucent Circle)
+            # We use a point geometry but set the icon to a Circle with high opacity and radius
+            radius_visual_scale = temp_wind_now * 0.5 * 1.5 
+            animated_features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [temp_lon, temp_lat]},
+                "properties": {
+                    "time": time_str,
+                    "popup": f"Radius – {temp_wind_now:.0f} mph",
+                    "icon": "circle",
+                    "iconstyle": {
+                        "color": "#ef4444", 
+                        "fillColor": "#ef4444", 
+                        "weight": 2, 
+                        "opacity": 0.8, 
+                        "fillOpacity": 0.15,
+                        "radius": radius_visual_scale # Dynamic radius
+                    }
+                }
+            })
 
-            # B. Create a point feature for the animated eye marker
-            point_features.append({
+            # B. Feature for the Eye Marker (Small Solid Dot)
+            animated_features.append({
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [temp_lon, temp_lat]},
                 "properties": {
                     "time": time_str,
                     "popup": f"Eye – {temp_wind_now:.0f} mph",
-                    # Use Folium's built-in icon styling for the moving dot
                     "icon": "circle",
                     "iconstyle": {
                         "color": "#ef4444", 
                         "fillColor": "#ef4444", 
                         "weight": 4, 
-                        "radius": 10
+                        "opacity": 1.0, 
+                        "fillOpacity": 1.0,
+                        "radius": 10 # Fixed radius for the eye
                     }
                 }
             })
 
-
-        # Create the final GeoJSON feature collection for the ANIMATED eye
+        # Create the final GeoJSON feature collection for all ANIMATED elements
         geo_json_data = {
             "type": "FeatureCollection",
-            "features": point_features
+            "features": animated_features
         }
         
-        # Add the animated eye marker using TimestampedGeoJson
+        # Add the animated eye and radius markers using TimestampedGeoJson
         TimestampedGeoJson(
             geo_json_data,
             period="PT1H", 
