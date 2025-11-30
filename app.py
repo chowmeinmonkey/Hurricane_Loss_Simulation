@@ -195,52 +195,101 @@ with tab2:
 
     if st.session_state.storm_launched and st.session_state.storm_data:
         wind, center = st.session_state.storm_data
-        features = []
+        
+        # 1. Prepare Features for GeoJSON
+        point_features = []
+        path_coordinates = []
         
         base_time = pd.to_datetime('2025-09-01T00:00:00')
         current_lat, current_lon = center
 
         for h in range(16):
+            # Simulate movement and wind decay
             current_lat += np.random.normal(0.04, 0.015)
             current_lon -= 0.13
             wind_now = max(60, wind - h*5)
             
             current_time = base_time + pd.Timedelta(hours=h)
             time_str = current_time.isoformat()
+            
+            # Add the current coordinates to the path track
+            path_coordinates.append([current_lon, current_lat])
 
-            # radius_pixels property for dynamic circle size (visual scaling)
-            radius_prop = wind_now * 0.5 * 1.5 
-
-            # Create a GeoJSON Point feature for each step
-            features.append({
+            # Create a point feature for the moving eye/radius
+            point_features.append({
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [current_lon, current_lat]},
                 "properties": {
                     "time": time_str,
-                    "popup": f"Wind: {wind_now:.0f} mph, Radius: {wind_now * 0.5:.1f} km",
-                    "radius_pixels": radius_prop 
+                    "popup": f"Eye – {wind_now:.0f} mph",
+                    # Use Folium's built-in icon styling for the moving dot
+                    "icon": "circle",
+                    "iconstyle": {
+                        "color": "#ef4444", 
+                        "fillColor": "#ef4444", 
+                        "weight": 4, 
+                        "radius": 10
+                    }
                 }
             })
+            
+            # --- Draw the wind field circle *statically* for each step ---
+            # To show the radius at each point without complex custom JS, we draw 
+            # a standard Folium CircleMarker for each time step. This won't animate
+            # on the slider, but it will show the full track of the wind field radius.
+            folium.CircleMarker(
+                location=[current_lat, current_lon],
+                radius=wind_now * 0.5 * 1.5, # Scaled radius for visual effect
+                color="#ef4444",
+                weight=1,
+                fillOpacity=0.08,
+            ).add_to(m)
+
+
+        # Create the final GeoJSON feature collection
+        geo_json_data = {
+            "type": "FeatureCollection",
+            "features": point_features
+        }
         
         m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
         
-        # FIX: Single-line JavaScript definition to prevent Python SyntaxError on deployment.
-        js_func = "function customPointToLayer(feature, latlng) {var radius_pixels = feature.properties.radius_pixels || 10; var circle_color = '#ef4444'; var circle = L.circleMarker(latlng, {radius: radius_pixels, fillColor: circle_color, color: circle_color, weight: 2, opacity: 0.8, fillOpacity: 0.15}); var eye = L.circleMarker(latlng, {radius: 5, fillColor: circle_color, color: circle_color, weight: 1, opacity: 1, fillOpacity: 1}); var group = L.layerGroup([circle, eye]); if (feature.properties.popup) {group.bindPopup(feature.properties.popup);} return group;}"
-        
-        # Add the JavaScript function definition to the map's HTML head
-        m.get_root().header.add_child(folium.Element(f"<script>{js_func}</script>"))
+        # Add the static radius circles for the entire track (must be added before GeoJSON)
+        # Note: We rebuild the circles here because they must be added to the map object 'm'
+        temp_lat, temp_lon = center
+        temp_wind = wind
+        for h in range(16):
+            temp_lat += np.random.normal(0.04, 0.015)
+            temp_lon -= 0.13
+            temp_wind_now = max(60, temp_wind - h*5)
+            
+            folium.CircleMarker(
+                location=[temp_lat, temp_lon],
+                radius=temp_wind_now * 0.5 * 1.5,
+                color="#ef4444",
+                weight=1,
+                fillOpacity=0.08,
+            ).add_to(m)
 
+        # Add the animated eye marker using TimestampedGeoJson
         TimestampedGeoJson(
-            {"type": "FeatureCollection", "features": features},
+            geo_json_data,
             period="PT1H", 
             auto_play=True, 
             loop=False, 
             add_last_point=True,
             duration='PT16H', 
-            transition_time=500,
-            # Reference the JS function by its name as a string
-            pointToLayer='customPointToLayer' 
+            transition_time=500
         ).add_to(m)
+        
+        # Add the line track for better visualization of the path
+        folium.PolyLine(
+            path_coordinates,
+            color="#ef4444",
+            weight=3,
+            opacity=0.7
+        ).add_to(m)
+        
         folium_static(m, width=900, height=550)
 
 with tab3:
