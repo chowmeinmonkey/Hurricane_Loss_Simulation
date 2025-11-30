@@ -11,7 +11,7 @@ from streamlit_folium import folium_static
 from folium.plugins import TimestampedGeoJson, HeatMap
 from folium import CircleMarker
 from scipy.stats import poisson
-import json # <-- Added for safe JavaScript string handling
+import json # Added for safe JavaScript string handling
 
 # Initialize session state for tab control and storm data
 if 'storm_launched' not in st.session_state:
@@ -202,26 +202,42 @@ with tab2:
         
         base_time = pd.to_datetime('2025-09-01T00:00:00')
         current_lat, current_lon = center
+        
+        # Initialize map once
+        m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
 
+        # FIX: Loop through time steps to create points and static radius circles
+        temp_lat, temp_lon = center
+        temp_wind = wind
         for h in range(16):
-            # Simulate movement and wind decay
-            current_lat += np.random.normal(0.04, 0.015)
-            current_lon -= 0.13
-            wind_now = max(60, wind - h*5)
+            # Calculate properties for this time step
+            temp_lat += np.random.normal(0.04, 0.015)
+            temp_lon -= 0.13
+            temp_wind_now = max(60, temp_wind - h*5)
             
             current_time = base_time + pd.Timedelta(hours=h)
             time_str = current_time.isoformat()
             
-            # Add the current coordinates to the path track
-            path_coordinates.append([current_lon, current_lat])
+            # Add coordinates to the path track
+            path_coordinates.append([temp_lon, temp_lat])
 
-            # Create a point feature for the moving eye/radius
+            # A. Draw the wind field circle (Static element for the track, not animated by slider)
+            folium.CircleMarker(
+                location=[temp_lat, temp_lon],
+                # radius is in meters for folium.CircleMarker, scaled for visual effect
+                radius=temp_wind_now * 0.5 * 1.5, 
+                color="#ef4444",
+                weight=1,
+                fillOpacity=0.08,
+            ).add_to(m)
+
+            # B. Create a point feature for the animated eye marker
             point_features.append({
                 "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [current_lon, current_lat]},
+                "geometry": {"type": "Point", "coordinates": [temp_lon, temp_lat]},
                 "properties": {
                     "time": time_str,
-                    "popup": f"Eye – {wind_now:.0f} mph",
+                    "popup": f"Eye – {temp_wind_now:.0f} mph",
                     # Use Folium's built-in icon styling for the moving dot
                     "icon": "circle",
                     "iconstyle": {
@@ -232,45 +248,14 @@ with tab2:
                     }
                 }
             })
-            
-            # --- Draw the wind field circle *statically* for each step ---
-            # To show the radius at each point without complex custom JS, we draw 
-            # a standard Folium CircleMarker for each time step. This won't animate
-            # on the slider, but it will show the full track of the wind field radius.
-            folium.CircleMarker(
-                location=[current_lat, current_lon],
-                radius=wind_now * 0.5 * 1.5, # Scaled radius for visual effect
-                color="#ef4444",
-                weight=1,
-                fillOpacity=0.08,
-            ).add_to(m)
 
 
-        # Create the final GeoJSON feature collection
+        # Create the final GeoJSON feature collection for the ANIMATED eye
         geo_json_data = {
             "type": "FeatureCollection",
             "features": point_features
         }
         
-        m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
-        
-        # Add the static radius circles for the entire track (must be added before GeoJSON)
-        # Note: We rebuild the circles here because they must be added to the map object 'm'
-        temp_lat, temp_lon = center
-        temp_wind = wind
-        for h in range(16):
-            temp_lat += np.random.normal(0.04, 0.015)
-            temp_lon -= 0.13
-            temp_wind_now = max(60, temp_wind - h*5)
-            
-            folium.CircleMarker(
-                location=[temp_lat, temp_lon],
-                radius=temp_wind_now * 0.5 * 1.5,
-                color="#ef4444",
-                weight=1,
-                fillOpacity=0.08,
-            ).add_to(m)
-
         # Add the animated eye marker using TimestampedGeoJson
         TimestampedGeoJson(
             geo_json_data,
