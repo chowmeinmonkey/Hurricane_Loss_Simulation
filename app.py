@@ -1,5 +1,5 @@
 """
-Florida Hurricane Risk Lab
+Florida Hurricane Risk Lab 
 """
 
 import streamlit as st
@@ -68,7 +68,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ——————————————————————— Data ———————————————————————
+# ——————————————————————— Portfolio ———————————————————————
 @st.cache_data
 def get_portfolio():
     return pd.DataFrame({
@@ -84,7 +84,7 @@ df = get_portfolio()
 # ——————————————————————— Core Functions ———————————————————————
 def vulnerability(wind_mph, construction="average"):
     base = max(0.0, min(1.0, wind_mph / 150))
-    mult = {"wood": 1.50, "brick": 1.15, "concrete": 0.75}
+    mult = {"wood": 1.50, "brick": 1.15, "concrete":0.75}
     return min(1.0, base * mult.get(construction.lower(), 1.0))
 
 def simulate_storm():
@@ -100,8 +100,7 @@ def calculate_loss(df, wind, center):
         dist = ((row.lat - center[0])**2 + (row.lon - center[1])**2)**0.5 * 111
         if dist <= radius_km:
             dmg = vulnerability(wind, row.construction_type)
-            loss = row.insured_value * dmg
-            total += loss
+            total += row.insured_value * dmg
             impacts.append((row.lat, row.lon, dmg))
         else:
             impacts.append((row.lat, row.lon, 0))
@@ -123,7 +122,6 @@ with st.sidebar:
     hurricanes_per_year = st.slider("Hurricanes per year (λ)", 0.1, 10.0, 0.56, 0.05)
     wind_mean = st.slider("Mean wind speed (mph)", 80, 180, 110, 5)
     wind_std = st.slider("Wind speed std dev (mph)", 10, 50, 25, 5)
-    vulnerability_threshold = st.slider("Damage starts at (mph)", 100, 200, 150, 5)
     sim_years = st.slider("Years to simulate", 5_000, 50_000, 20_000, 5_000)
 
     st.markdown("---")
@@ -171,8 +169,7 @@ with tab1:
     • X-axis = Annual insured loss in dollars<br>
     • Y-axis = Probability of exceeding that loss in any given year<br>
     • 1% on Y-axis = a 1-in-100-year event<br>
-    • The dashed line shows the Expected Annual Loss<br><br>
-    This is the gold-standard chart used by reinsurance companies worldwide.
+    • Dashed yellow line = Expected Annual Loss
     </div>
     """, unsafe_allow_html=True)
 
@@ -196,12 +193,11 @@ with tab1:
 
             fig, ax = plt.subplots(figsize=(12,7))
             sorted_l = sorted(yearly_losses, reverse=True)
-            probs = np.linspace(1, 0, len(sorted_l))
-            ax.loglog(sorted_l, probs, color="#f472b6", lw=3)
+            ax.loglog(sorted_l, np.linspace(1, 0, len(sorted_l)), color="#f472b6", lw=3)
             ax.axvline(np.mean(yearly_losses), color='#fbbf24', linestyle='--', linewidth=2,
                        label=f'Expected Loss: ${np.mean(yearly_losses):,.0f}')
             ax.grid(True, which="both", ls="--", alpha=0.5)
-            ax.set_title(f"Loss Exceedance Curve — {sim_years:,} Years Simulated", color="white", fontsize=18)
+            ax.set_title(f"Loss Exceedance Curve — {sim_years:,} Years", color="white", fontsize=18)
             ax.set_xlabel("Annual Loss ($)", color="#e2e8f0")
             ax.set_ylabel("Exceedance Probability", color="#e2e8f0")
             ax.legend()
@@ -211,12 +207,11 @@ with tab2:
     st.markdown("##### Watch a Hurricane Make Landfall")
     st.markdown("""
     <div class="explanation">
-    <strong>How it works:</strong><br>
-    • A random hurricane center is generated in the Gulf/Atlantic<br>
-    • Wind speed starts at the simulated maximum value<br>
-    • The storm moves northwest at ~15 mph (typical track)<br>
-    • Wind decreases by ~5 mph per hour after landfall<br>
-    • Red dot = current eye position
+    <strong>How the animation works:</strong><br>
+    • Random hurricane forms in the Gulf or Atlantic<br>
+    • Moves northwest at realistic speed (~15 mph)<br>
+    • Wind speed decays gradually after landfall<br>
+    • Red dot shows the eye position hour-by-hour
     </div>
     """, unsafe_allow_html=True)
 
@@ -246,11 +241,10 @@ with tab3:
     st.markdown("""
     <div class="explanation">
     <strong>How damage is calculated:</strong><br>
-    • Storm radius ≈ wind speed × 0.5 km<br>
-    • Any property inside this radius is hit<br>
-    • Damage ratio = f(wind speed, building type)<br>
+    • Storm footprint = circular radius ≈ wind speed × 0.5 km<br>
+    • Any property inside takes damage based on wind speed & building type<br>
     • Wood buildings take 50% more damage than concrete<br>
-    • Heatmap intensity = damage ratio × insured value
+    • Heat intensity = damage ratio × insured value
     </div>
     """, unsafe_allow_html=True)
 
@@ -262,21 +256,38 @@ with tab3:
         HeatMap([[lat, lon, dmg*120] for lat, lon, dmg in impacts], radius=25, blur=20).add_to(m)
         folium_static(m, width=900, height=550)
 
-# ——————————————————————— How the Math Works ———————————————————————
+# ——————————————————————— Technical Details ———————————————————————
 with st.expander("How the Math Works — Technical Details", expanded=False):
     st.markdown("""
-    ### Monte-Carlo Catastrophe Modeling 
+    ### Monte-Carlo Catastrophe Modeling (industry standard)
 
-    1. **Event frequency**  
-       Number of hurricanes per year ~ Poisson(λ)  
-       λ = user slider × climate multiplier
+    1. **Frequency**  
+       Hurricanes/year ~ Poisson(λ) where λ = user value × climate multiplier
 
-    2. **Storm intensity**  
-       Max wind speed ~ Normal(μ, σ) clipped at 74 mph (hurricane threshold)  
-       μ = user mean × climate^0.4 (intensity rises slower than frequency)
+    2. **Intensity**  
+       Max wind speed ~ Normal(μ, σ) clipped ≥74 mph  
+       μ grows with climate^0.4 (scientific consensus)
 
-    3. **Storm location**  
-       Uniformly random center in historical formation zone
+    3. **Location**  
+       Uniform random center in historical genesis zone
 
-    4. **Damage function**  
-       Damage ratio = min(1, (wind / 150 mph)
+    4. **Vulnerability**  
+       Damage % = min(1, (wind / 150) × building factor)
+
+    5. **Footprint**  
+       Simple circular radius = wind × 0.5 km
+
+    6. **Aggregation**  
+       Annual loss = sum of all storm losses in that year
+
+    7. **Exceedance Curve**  
+       Sort annual losses → plot vs. rank probability
+
+    This is the same core methodology used by RMS, AIR Worldwide, and reinsurance pricing teams — just simplified for speed and teaching.
+    """)
+
+# ——————————————————————— Footer ———————————————————————
+st.markdown("""
+<div style="text-align:center;margin-top:6rem;padding:2rem;background:rgba(236,72,153,0.08);border-radius:16px;">
+</div>
+""", unsafe_allow_html=True)
