@@ -1,5 +1,5 @@
 """
-Florida Hurricane Risk Lab — Final Professional Version
+Florida Hurricane Risk Lab
 """
 
 import streamlit as st
@@ -48,7 +48,8 @@ def vulnerability(wind_mph, construction):
     return min(1.0, base * mult.get(construction.lower(), 1.0))
 
 def simulate_storm():
-    center = np.random.uniform(24.3, 31.0), np.random.uniform(-87.8, -79.8))
+    # REMOVE the extra closing parenthesis at the end of this line
+    center = (np.random.uniform(24.3, 31.0), np.random.uniform(-87.8, -79.8))
     wind = max(74, np.random.normal(110, 25))
     return wind, center
 
@@ -246,4 +247,4 @@ with st.expander("Technical Methodology"):
     - Vulnerability: Damage = min(1, wind/150 × building factor)
     """)
 
-st.markdown("<p style='text-align:center;color:#64748b;margin-top:4rem;'>Built with Streamlit • Open source • 2025</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#64748b;margin-top:4rem;'>Michael A. Campion • 2025</p>", unsafe_allow_html=True)
