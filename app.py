@@ -183,8 +183,8 @@ with tab2:
     st.markdown("#### Hurricane Landfall Animation")
     st.markdown("""
     <div class="explanation">
-    &bullet; <strong>Red dot</strong> = hurricane eye<br>
-    &bullet; <strong>Translucent red circle</strong> = full radius of hurricane-force winds (∼ wind speed &times; 0.5 km)<br>
+    &bullet; <strong>Red dot</strong> = hurricane eye (Now clearly visible)<br>
+    &bullet; <strong>Translucent blue circle</strong> = full radius of hurricane-force winds<br>
     &bullet; Damage occurs anywhere inside this circle &mdash; that’s why even storms that “miss” Florida can still cause losses.
     </div>
     """, unsafe_allow_html=True)
@@ -196,7 +196,6 @@ with tab2:
     if st.session_state.storm_launched and st.session_state.storm_data:
         wind, center = st.session_state.storm_data
         
-        # 1. Prepare Features for GeoJSON
         animated_features = []
         path_coordinates = []
         
@@ -205,6 +204,10 @@ with tab2:
         
         # Initialize map once
         m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
+        
+        # Define colors
+        EYE_COLOR = "#ef4444"
+        RADIUS_COLOR = "#3b82f6" # Bright Blue for high contrast
 
         temp_lat, temp_lon = center
         temp_wind = wind
@@ -217,11 +220,9 @@ with tab2:
             current_time = base_time + pd.Timedelta(hours=h)
             time_str = current_time.isoformat()
             
-            # Add coordinates to the path track
             path_coordinates.append([temp_lon, temp_lat])
 
-            # A. Feature for the Wind Field Radius (Large Translucent Circle)
-            # We use a point geometry but set the icon to a Circle with high opacity and radius
+            # A. Feature for the Wind Field Radius (Large Translucent Blue Circle)
             radius_visual_scale = temp_wind_now * 0.5 * 1.5 
             animated_features.append({
                 "type": "Feature",
@@ -231,8 +232,8 @@ with tab2:
                     "popup": f"Radius – {temp_wind_now:.0f} mph",
                     "icon": "circle",
                     "iconstyle": {
-                        "color": "#ef4444", 
-                        "fillColor": "#ef4444", 
+                        "color": RADIUS_COLOR, 
+                        "fillColor": RADIUS_COLOR, 
                         "weight": 2, 
                         "opacity": 0.8, 
                         "fillOpacity": 0.15,
@@ -241,7 +242,7 @@ with tab2:
                 }
             })
 
-            # B. Feature for the Eye Marker (Small Solid Dot)
+            # B. Feature for the Eye Marker (Small Solid Red Dot)
             animated_features.append({
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [temp_lon, temp_lat]},
@@ -250,8 +251,8 @@ with tab2:
                     "popup": f"Eye – {temp_wind_now:.0f} mph",
                     "icon": "circle",
                     "iconstyle": {
-                        "color": "#ef4444", 
-                        "fillColor": "#ef4444", 
+                        "color": EYE_COLOR, 
+                        "fillColor": EYE_COLOR, 
                         "weight": 4, 
                         "opacity": 1.0, 
                         "fillOpacity": 1.0,
@@ -280,7 +281,7 @@ with tab2:
         # Add the line track for better visualization of the path
         folium.PolyLine(
             path_coordinates,
-            color="#ef4444",
+            color=EYE_COLOR, # Keep the path line red
             weight=3,
             opacity=0.7
         ).add_to(m)
