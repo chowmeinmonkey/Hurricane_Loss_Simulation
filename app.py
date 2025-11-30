@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import folium
-from streamlit_folium import folium_static        # ← fixed
+from streamlit_folium import folium_static
 from folium.plugins import TimestampedGeoJson, HeatMap
 from folium import CircleMarker
 from scipy.stats import poisson
@@ -38,20 +38,20 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ——————————————————————— Data ———————————————————————
+# ——————————————————————— Portfolio Data ———————————————————————
 @st.cache_data
 def get_portfolio():
     return pd.DataFrame({
         "city": ["Miami", "Tampa", "Tallahassee", "Orlando", "Ft Lauderdale", "Jacksonville", "Key West", "Pensacola"],
         "insured_value": [500000, 750000, 1000000, 600000, 800000, 1200000, 450000, 900000],
         "construction_type": ["wood", "brick", "concrete", "wood", "brick", "concrete", "wood", "concrete"],
-        "lat": [25.7617, 27.9478, 30.4383, 28.5383, 26.1224, 30: 30.3322, 24.5551, 30.4213],
+        "lat": [25.7617, 27.9478, 30.4383, 28.5383, 26.1224, 30.3322, 24.5551, 30.4213],
         "lon": [-80.1918, -82.4584, -84.2807, -81.3792, -80.1373, -81.6557, -81.7799, -87.2169]
     })
 
 df = get_portfolio()
 
-# ——————————————————————— Model ———————————————————————
+# ——————————————————————— Model Functions ———————————————————————
 def vulnerability(wind_mph, construction):
     base = max(0.0, min(1.0, wind_mph / 150))
     mult = {"wood": 1.5, "brick": 1.15, "concrete": 0.75}
@@ -86,7 +86,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ——————————————————————— Controls ———————————————————————
+# ——————————————————————— Sidebar Controls ———————————————————————
 with st.sidebar:
     st.header("Parameters")
     hurricanes_per_year = st.slider("Hurricanes per year", 0.1, 10.0, 0.56, 0.05)
@@ -159,8 +159,7 @@ with tab1:
             n = poisson.rvs(hurricanes_per_year * climate_factor)
             loss = 0
             for _ in range(n):
-                if storm_idx >= total_storms:
-                    break
+                if storm_idx >= total_storms: break
                 w = winds[storm_idx]
                 c = (lats[storm_idx], lons[storm_idx])
                 loss += calculate_loss(df, w, c)[0]
@@ -264,4 +263,4 @@ with st.expander("Technical Details & Methodology"):
     - **Exceedance curve**: Rank-ordered annual losses
     """)
 
-st.markdown("<p style='text-align:center; color:#64748b; margin-top:4rem;'>Built with Streamlit • Open source • November 2025</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; color:#64748b; margin-top:4rem;'>Michael A. Campion Nov 2025</p>", unsafe_allow_html=True)
