@@ -209,7 +209,6 @@ with tab2:
             time_str = current_time.isoformat()
 
             # radius_pixels property for dynamic circle size (visual scaling)
-            # This is the property the custom JS will read.
             radius_prop = wind_now * 0.5 * 1.5 
 
             # Create a GeoJSON Point feature for each step
@@ -222,10 +221,14 @@ with tab2:
                     "radius_pixels": radius_prop 
                 }
             })
-
-        # Custom JavaScript function to draw the circle and the eye marker
-        point_to_layer_js = """
-        function(feature, latlng) {
+        
+        m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
+        
+        # FIX: Define the custom JavaScript function using folium.Element
+        # This injects the JS function directly into the map's script context.
+        # We must use folium.Element to ensure the JS is available when TimestampedGeoJson runs.
+        js_func = """
+        function customPointToLayer(feature, latlng) {
             var radius_pixels = feature.properties.radius_pixels || 10;
             var circle_color = '#ef4444';
 
@@ -259,7 +262,9 @@ with tab2:
         }
         """
         
-        m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
+        # Add the JavaScript function definition to the map's HTML head
+        m.get_root().header.add_child(folium.Element(f"<script>{js_func}</script>"))
+
         TimestampedGeoJson(
             {"type": "FeatureCollection", "features": features},
             period="PT1H", 
@@ -268,8 +273,8 @@ with tab2:
             add_last_point=True,
             duration='PT16H', 
             transition_time=500,
-            # Use json.dumps to safely pass the JS function string to Folium
-            pointToLayer=json.dumps(point_to_layer_js) 
+            # Reference the JS function by its name as a string (NO json.dumps needed)
+            pointToLayer='customPointToLayer' 
         ).add_to(m)
         folium_static(m, width=900, height=550)
 
