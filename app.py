@@ -22,6 +22,10 @@ if 'simulation_run' not in st.session_state:
     st.session_state.simulation_run = False
 if 'yearly_losses' not in st.session_state:
     st.session_state.yearly_losses = []
+if 'single_storm_generated' not in st.session_state:
+    st.session_state.single_storm_generated = False
+if 'single_storm_data' not in st.session_state:
+    st.session_state.single_storm_data = None
 
 
 # ——————————————————————— Styling ———————————————————————
@@ -104,10 +108,11 @@ with st.sidebar:
     climate_factor = {"Today":1.0,"2030":1.12,"2050":1.25,"2100":1.45}[climate]
     st.write(f"Intensity ×{climate_factor:.2f}")
 
-# Reset storm animation state if parameters change
+# Reset state if parameters change
 if any(st.session_state[k] != st.session_state.get(f'prev_{k}', st.session_state[k]) for k in ["hpy", "wm", "ws", "sy", "cl"]):
     st.session_state.storm_launched = False
     st.session_state.simulation_run = False
+    st.session_state.single_storm_generated = False
 
 for k in ["hpy", "wm", "ws", "sy", "cl"]:
     st.session_state[f'prev_{k}'] = st.session_state[k]
@@ -134,7 +139,7 @@ with c2: st.markdown(f'<div class="metric-card"><div class="metric-label">99% Va
 with c3: st.markdown(f'<div class="metric-card"><div class="metric-label">P(Loss > $10M)</div><div class="metric-value">{(losses>10e6).mean():.1%}</div></div>', unsafe_allow_html=True)
 with c4: st.markdown(f'<div class="metric-card"><div class="metric-label">Climate Multiplier</div><div class="metric-value">×{climate_factor:.2f}</div></div>', unsafe_allow_html=True)
 
----
+st.markdown("---")
 
 # ——————————————————————— Loss Exceedance Curve ———————————————————————
 st.markdown("## 📉 Loss Exceedance Curve")
@@ -149,7 +154,6 @@ The yellow dashed line is the Expected Annual Loss (average over all simulated y
 """, unsafe_allow_html=True)
 
 def run_full_simulation():
-    # This function is now defined outside the if block to ensure Streamlit can manage state cleanly
     progress = st.progress(0)
     status = st.empty()
 
@@ -177,7 +181,7 @@ def run_full_simulation():
     progress.empty()
     status.empty()
 
-if st.button("Run Full Simulation", type="primary"):
+if st.button("Run Full Simulation", type="primary", key="run_sim_button"):
     run_full_simulation()
 
 if st.session_state.simulation_run:
@@ -193,7 +197,7 @@ if st.session_state.simulation_run:
     ax.legend()
     st.pyplot(fig)
 
----
+st.markdown("---")
 
 # ——————————————————————— Storm Animation ———————————————————————
 st.markdown("## 🌪️ Storm Animation")
@@ -217,12 +221,11 @@ if st.session_state.storm_launched and st.session_state.storm_data:
     
     base_time = pd.to_datetime('2025-09-01T00:00:00')
     
-    # Initialize map once
     m = folium.Map(location=[27.5, -83], zoom_start=7, tiles="CartoDB dark_matter")
     
     # Define colors
     EYE_COLOR = "#ef4444"
-    RADIUS_COLOR = "#3b82f6" # Bright Blue
+    RADIUS_COLOR = "#3b82f6" 
 
     temp_lat, temp_lon = center
     temp_wind = wind
@@ -303,7 +306,7 @@ if st.session_state.storm_launched and st.session_state.storm_data:
     
     folium_static(m, width=900, height=550)
 
----
+st.markdown("---")
 
 # ——————————————————————— Single Storm Map ———————————————————————
 st.markdown("## 🗺️ Single Storm Damage Map")
@@ -315,7 +318,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if st.button("Generate Storm", key="generate_single_storm"):
-    # Generate and store storm data for persistence
     st.session_state.single_storm_data = simulate_storm()
     st.session_state.single_storm_generated = True
 
