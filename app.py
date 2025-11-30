@@ -137,7 +137,7 @@ st.markdown("""
 <div style="text-align:center; padding:4rem 2rem; background:linear-gradient(135deg,rgba(236,72,153,0.15),rgba(245,158,11,0.15)); border-radius:20px; border:1px solid rgba(236,72,153,0.3); margin-bottom:3rem;">
     <h1 style="font-size:4.2rem; margin:0;">Hurricane Risk Lab</h1>
     <p style="font-size:1.4rem; color:#cbd5e1; margin-top:1rem;">
-        Interactive catastrophe modeling · Real-time analytics · Open source
+        Interactive catastrophe modeling 
     </p>
 </div>
 """, unsafe_allow_html=True)
