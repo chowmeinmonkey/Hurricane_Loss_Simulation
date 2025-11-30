@@ -1,7 +1,5 @@
 """
-Florida Hurricane Risk Lab — Customizable Edition
-Real-time hurricane loss simulation for Florida.
-Adjust parameters → see impacts instantly.
+Florida Hurricane Risk Lab
 """
 
 import streamlit as st
@@ -10,8 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import folium
 from streamlit_folium import folium_static
-from folium.plugins import TimestampedGeoJson, HeatMap
-from scipy.stats import poisson, norm
+from folium.plugins import TimestampedGeoJson, HeatMap, Circle
+from scipy.stats import poisson
 
 # ——————————————————————— Styling ———————————————————————
 st.set_page_config(page_title="Hurricane Risk Lab", layout="wide")
@@ -51,16 +49,26 @@ st.markdown("""
         border-radius: 12px 12px 0 0;
         padding: 12px 28px;
         color: #94a3b8;
+        font-weight: 500;
     }
     .stTabs [aria-selected="true"] {
         background: linear-gradient(90deg, #ec4899, #f59e0b);
         color: white;
     }
     .block-container {padding-top: 2rem; max-width: 1400px;}
+    .explanation {
+        background: rgba(236, 72, 153, 0.08);
+        padding: 1.2rem;
+        border-radius: 12px;
+        border-left: 4px solid #ec4899;
+        margin: 1.5rem 0;
+        font-size: 0.98rem;
+        line-height: 1.6;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# ——————————————————————— Portfolio Data ———————————————————————
+# ——————————————————————— Data ———————————————————————
 @st.cache_data
 def get_portfolio():
     return pd.DataFrame({
@@ -104,115 +112,96 @@ st.markdown("""
 <div style="text-align:center;padding:4rem 2rem;background:linear-gradient(135deg,rgba(236,72,153,0.15),rgba(245,158,11,0.15));border-radius:20px;border:1px solid rgba(236,72,153,0.3);margin-bottom:3rem;">
     <h1 style="font-size:4.5rem;margin:0;">Hurricane Risk Lab</h1>
     <p style="font-size:1.5rem;color:#cbd5e1;max-width:900px;margin:1.5rem auto;line-height:1.6;">
-        Real-time catastrophe modeling for Florida using Monte-Carlo simulation.<br>
-        Adjust parameters like hurricane frequency, wind speed, and climate impact to see how they affect insured losses across major cities.
+        Interactive catastrophe modeling for Florida — explore how storm frequency, intensity, and climate change affect insured losses.
     </p>
 </div>
 """, unsafe_allow_html=True)
 
-# ——————————————————————— Sidebar Controls ———————————————————————
+# ——————————————————————— Sidebar ———————————————————————
 with st.sidebar:
-    st.header("Simulation Parameters")
-    
-    hurricanes_per_year = st.slider("Average hurricanes per year", 0.1, 10.0, 0.56, 0.05)
-    wind_mean = st.slider("Mean maximum wind speed (mph)", 80, 180, 110, 5)
-    wind_std = st.slider("Wind speed standard deviation (mph)", 10, 50, 25, 5)
-    vulnerability_threshold = st.slider("Vulnerability threshold (mph)", 100, 200, 150, 5)
-    num_years = st.slider("Simulation years", 1000, 50000, 20000, 1000)
-    
+    st.header("Simulation Controls")
+    hurricanes_per_year = st.slider("Hurricanes per year (λ)", 0.1, 10.0, 0.56, 0.05)
+    wind_mean = st.slider("Mean wind speed (mph)", 80, 180, 110, 5)
+    wind_std = st.slider("Wind speed std dev (mph)", 10, 50, 25, 5)
+    vulnerability_threshold = st.slider("Damage starts at (mph)", 100, 200, 150, 5)
+    sim_years = st.slider("Years to simulate", 5_000, 50_000, 20_000, 5_000)
+
     st.markdown("---")
     st.subheader("Climate Scenario")
-    climate = st.select_slider("Projected year", options=["Today", "2030", "2050", "2100"], value="Today")
+    climate = st.select_slider("Year", options=["Today", "2030", "2050", "2100"], value="Today")
     climate_factor = {"Today": 1.0, "2030": 1.12, "2050": 1.25, "2100": 1.45}[climate]
-    st.markdown(f"**Intensity multiplier: ×{climate_factor:.2f}**")
+    st.markdown(f"**Multiplier: ×{climate_factor:.2f}**")
 
-# ——————————————————————— Live Risk Dashboard ———————————————————————
+# ——————————————————————— Live Dashboard ———————————————————————
 st.markdown("### Live Risk Dashboard")
 
 @st.cache_data(ttl=30)
-def quick_simulation():
+def quick_sim():
     losses = []
-    for _ in range(200):
+    for _ in range(250):
         n = poisson.rvs(hurricanes_per_year * climate_factor)
         year_loss = 0
         for _ in range(n):
-            wind = max(74, np.random.normal(wind_mean * climate_factor**0.4, wind_std))
-            center = simulate_storm()[1]
-            year_loss += calculate_loss(df, wind, center)[0]
+            w = max(74, np.random.normal(wind_mean * climate_factor**0.4, wind_std))
+            c = simulate_storm()[1]
+            year_loss += calculate_loss(df, w, c)[0]
         losses.append(year_loss)
     return np.array(losses)
 
-losses = quick_simulation()
+losses = quick_sim()
 
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.markdown(f'''
-    <div class="metric-card">
-        <div class="metric-label">Expected Annual Loss</div>
-        <div class="metric-value">${np.mean(losses):,.0f}</div>
-    </div>
-    ''', unsafe_allow_html=True)
-with col2:
-    st.markdown(f'''
-    <div class="metric-card">
-        <div class="metric-label">99% VaR</div>
-        <div class="metric-value">${np.quantile(losses, 0.99):,.0f}</div>
-    </div>
-    ''', unsafe_allow_html=True)
-with col3:
-    st.markdown(f'''
-    <div class="metric-card">
-        <div class="metric-label">Prob > $10M loss</div>
-        <div class="metric-value">{(np.array(losses) > 10e6).mean():.1%}</div>
-    </div>
-    ''', unsafe_allow_html=True)
-with col4:
-    st.markdown(f'''
-    <div class="metric-card">
-        <div class="metric-label">Climate Multiplier</div>
-        <div class="metric-value">×{climate_factor:.2f}</div>
-    </div>
-    ''', unsafe_allow_html=True)
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Expected Annual Loss</div><div class="metric-value">${losses.mean():,.0f}</div></div>', unsafe_allow_html=True)
+with c2:
+    st.markdown(f'<div class="metric-card"><div class="metric-label">99% VaR</div><div class="metric-value">${np.quantile(losses,0.99):,.0f}</div></div>', unsafe_allow_html=True)
+with c3:
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Prob > $10M</div><div class="metric-value">{(losses>10e6).mean():.1%}</div></div>', unsafe_allow_html=True)
+with c4:
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Climate Multiplier</div><div class="metric-value">×{climate_factor:.2f}</div></div>', unsafe_allow_html=True)
 
-# ——————————————————————— Tabs ———————————————————————
+# ——————————————————————— Tabs with Explanations ———————————————————————
 tab1, tab2, tab3 = st.tabs(["Loss Curve", "Animated Storm", "Damage Heatmap"])
 
 with tab1:
     st.markdown("##### Loss Exceedance Curve")
     st.markdown("""
-    This chart shows the probability of exceeding different loss levels in a given year.
-    - The x-axis is the loss amount ($).
-    - The y-axis is the chance of exceeding that loss (1% means a 1-in-100 year event).
-    - Hover over points for details.
-    """)
-    if st.button("Run Simulation", type="primary"):
-        with st.spinner(f"Simulating {num_years:,} years..."):
-            full_losses = []
-            total_storms = int(num_years * hurricanes_per_year * climate_factor * 1.5)
-            winds = np.maximum(74, np.random.normal(wind_mean * climate_factor**0.4, wind_std, total_storms))
-            centers_lat = np.random.uniform(24.3, 31.0, total_storms)
-            centers_lon = np.random.uniform(-87.8, -79.8, total_storms)
+    <div class="explanation">
+    <strong>What you’re seeing:</strong><br>
+    • X-axis = Annual insured loss in dollars<br>
+    • Y-axis = Probability of exceeding that loss in any given year<br>
+    • 1% on Y-axis = a 1-in-100-year event<br>
+    • The dashed line shows the Expected Annual Loss<br><br>
+    This is the gold-standard chart used by reinsurance companies worldwide.
+    </div>
+    """, unsafe_allow_html=True)
 
-            storm_idx = 0
-            for _ in range(num_years):
+    if st.button("Run Simulation", type="primary"):
+        with st.spinner(f"Simulating {sim_years:,} years..."):
+            total_storms = int(sim_years * hurricanes_per_year * climate_factor * 1.5)
+            winds = np.maximum(74, np.random.normal(wind_mean * climate_factor**0.4, wind_std, total_storms))
+            lat = np.random.uniform(24.3, 31.0, total_storms)
+            lon = np.random.uniform(-87.8, -79.8, total_storms)
+
+            yearly_losses = []
+            idx = 0
+            for _ in range(sim_years):
                 n = poisson.rvs(hurricanes_per_year * climate_factor)
-                year_loss = 0
+                loss = 0
                 for _ in range(n):
-                    if storm_idx >= total_storms:
-                        break
-                    w = winds[storm_idx]
-                    c = (centers_lat[storm_idx], centers_lon[storm_idx])
-                    year_loss += calculate_loss(df, w, c)[0]
-                    storm_idx += 1
-                full_losses.append(year_loss)
+                    if idx >= total_storms: break
+                    loss += calculate_loss(df, winds[idx], (lat[idx], lon[idx]))[0]
+                    idx += 1
+                yearly_losses.append(loss)
 
             fig, ax = plt.subplots(figsize=(12,7))
-            sorted_losses = sorted(full_losses, reverse=True)
-            probs = np.linspace(1, 0, len(sorted_losses))
-            ax.loglog(sorted_losses, probs, color="#f472b6", lw=3)
-            ax.axvline(np.mean(full_losses), color='white', ls='--', lw=2, label=f'Expected Loss: ${np.mean(full_losses):,.0f}')
+            sorted_l = sorted(yearly_losses, reverse=True)
+            probs = np.linspace(1, 0, len(sorted_l))
+            ax.loglog(sorted_l, probs, color="#f472b6", lw=3)
+            ax.axvline(np.mean(yearly_losses), color='#fbbf24', linestyle='--', linewidth=2,
+                       label=f'Expected Loss: ${np.mean(yearly_losses):,.0f}')
             ax.grid(True, which="both", ls="--", alpha=0.5)
-            ax.set_title(f"Loss Exceedance Curve — {num_years:,} Years", fontsize=18, color="white")
+            ax.set_title(f"Loss Exceedance Curve — {sim_years:,} Years Simulated", color="white", fontsize=18)
             ax.set_xlabel("Annual Loss ($)", color="#e2e8f0")
             ax.set_ylabel("Exceedance Probability", color="#e2e8f0")
             ax.legend()
@@ -220,7 +209,18 @@ with tab1:
 
 with tab2:
     st.markdown("##### Watch a Hurricane Make Landfall")
-    if st.button("Generate Storm Animation"):
+    st.markdown("""
+    <div class="explanation">
+    <strong>How it works:</strong><br>
+    • A random hurricane center is generated in the Gulf/Atlantic<br>
+    • Wind speed starts at the simulated maximum value<br>
+    • The storm moves northwest at ~15 mph (typical track)<br>
+    • Wind decreases by ~5 mph per hour after landfall<br>
+    • Red dot = current eye position
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("Launch Hurricane"):
         wind, center = simulate_storm()
         track = []
         lat, lon = center
@@ -243,17 +243,40 @@ with tab2:
 
 with tab3:
     st.markdown("##### Real-Time Damage Heatmap")
-    if st.button("Show Current Storm Impact"):
+    st.markdown("""
+    <div class="explanation">
+    <strong>How damage is calculated:</strong><br>
+    • Storm radius ≈ wind speed × 0.5 km<br>
+    • Any property inside this radius is hit<br>
+    • Damage ratio = f(wind speed, building type)<br>
+    • Wood buildings take 50% more damage than concrete<br>
+    • Heatmap intensity = damage ratio × insured value
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("Generate Storm Impact"):
         wind, center = simulate_storm()
         _, impacts = calculate_loss(df, wind, center)
         m = folium.Map(location=[27.8, -83], zoom_start=7, tiles="CartoDB positron")
-        folium.Circle(location=center, radius=wind*1000, color="#ec4899", weight=3, fill_opacity=0.25).add_to(m)
+        Circle(location=center, radius=wind*1000, color="#ec4899", weight=3, fill_opacity=0.25).add_to(m)
         HeatMap([[lat, lon, dmg*120] for lat, lon, dmg in impacts], radius=25, blur=20).add_to(m)
         folium_static(m, width=900, height=550)
 
-# ——————————————————————— Footer ———————————————————————
-st.markdown("""
-<div style="text-align:center;margin-top:6rem;padding:2rem;background:rgba(236,72,153,0.08);border-radius:16px;">
-    <p style="color:#94a3b8;">Built with Streamlit • Open Source • Designed for risk professionals</p>
-</div>
-""", unsafe_allow_html=True)
+# ——————————————————————— How the Math Works ———————————————————————
+with st.expander("How the Math Works — Technical Details", expanded=False):
+    st.markdown("""
+    ### Monte-Carlo Catastrophe Modeling 
+
+    1. **Event frequency**  
+       Number of hurricanes per year ~ Poisson(λ)  
+       λ = user slider × climate multiplier
+
+    2. **Storm intensity**  
+       Max wind speed ~ Normal(μ, σ) clipped at 74 mph (hurricane threshold)  
+       μ = user mean × climate^0.4 (intensity rises slower than frequency)
+
+    3. **Storm location**  
+       Uniformly random center in historical formation zone
+
+    4. **Damage function**  
+       Damage ratio = min(1, (wind / 150 mph)
