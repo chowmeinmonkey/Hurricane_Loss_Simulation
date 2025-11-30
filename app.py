@@ -204,13 +204,8 @@ with tab2:
             current_time = base_time + pd.Timedelta(hours=h)
             time_str = current_time.isoformat()
 
-            # The radius of hurricane-force winds in km, scaled for visual representation on map
-            # A radius of 1 km is roughly 0.009 degrees lat/lon at Florida's latitude.
-            # We'll use a simple scaling factor for visual impact.
-            # Convert km radius to a representative pixel radius for 'L.circleMarker' in JS
-            # Assuming ~20000 pixels for full map width, 0.5km wind * (some factor)
-            # This 'radius_prop' will be passed to JS to control the circle size.
-            radius_prop = wind_now * 0.5 * 1.5 # 0.5km per mph, times a visual scaling factor
+            # radius_pixels property for dynamic circle size
+            radius_prop = wind_now * 0.5 * 1.5 
 
             # Create a GeoJSON Point feature for each step
             features.append({
@@ -219,21 +214,21 @@ with tab2:
                 "properties": {
                     "time": time_str,
                     "popup": f"Wind: {wind_now:.0f} mph, Radius: {wind_now * 0.5:.1f} km",
-                    "marker-color": "#ef4444", # Color for the eye
-                    "radius_pixels": radius_prop # Custom property for dynamic radius in JS
+                    "marker-color": "#ef4444", 
+                    "radius_pixels": radius_prop 
                 }
             })
 
-        # Custom JavaScript function to draw the circle based on 'radius_pixels' property
+        # Custom JavaScript function to draw the circle and the eye marker
+        # FIX: The JS is now defined as a single-line string to avoid Python syntax issues
         point_to_layer_js = """
         function(feature, latlng) {
-            var radius_pixels = feature.properties.radius_pixels || 10; // Default radius if not set
-            var marker_color = feature.properties['marker-color'] || '#ef4444';
-            var circle_color = '#ef4444'; // Fixed color for the translucent circle
+            var radius_pixels = feature.properties.radius_pixels || 10;
+            var circle_color = '#ef4444';
 
             // Draw the translucent red circle for the hurricane's radius
             var circle = L.circleMarker(latlng, {
-                radius: radius_pixels, // Use the dynamic radius
+                radius: radius_pixels, 
                 fillColor: circle_color,
                 color: circle_color,
                 weight: 2,
@@ -243,18 +238,17 @@ with tab2:
 
             // Draw a smaller, solid red circle for the eye
             var eye = L.circleMarker(latlng, {
-                radius: 5, // Smaller fixed radius for the eye
-                fillColor: marker_color,
-                color: marker_color,
+                radius: 5, 
+                fillColor: circle_color,
+                color: circle_color,
                 weight: 1,
                 opacity: 1,
                 fillOpacity: 1
             });
 
-            // Create a layer group to combine both the circle and the eye
+            // Combine both into a layer group
             var group = L.layerGroup([circle, eye]);
             
-            // Add popup if available
             if (feature.properties.popup) {
                 group.bindPopup(feature.properties.popup);
             }
@@ -271,7 +265,6 @@ with tab2:
             add_last_point=True,
             duration='PT16H', 
             transition_time=500,
-            # Pass the custom pointToLayer function to render dynamic circles
             pointToLayer=point_to_layer_js 
         ).add_to(m)
         folium_static(m, width=900, height=550)
